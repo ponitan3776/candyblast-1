@@ -23,32 +23,15 @@
     touch-action: pan-x pan-y;
     -webkit-text-size-adjust: 100%;
   }
-  img, canvas, video, iframe {
-    max-width: 100%;
-    touch-action: none;
-  }
+  img, canvas, video, iframe { max-width:100%; touch-action:none; }
   #app{ display:flex; flex-direction:column; align-items:center; height:100%; width:100%;
     padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom)); gap:8px; }
   header{ width:100%; max-width:520px; display:flex; align-items:center; justify-content:space-between; padding:4px 6px; gap:8px; }
-  .title{ 
-    font-family:'Baloo 2', sans-serif; font-weight:800; font-size:clamp(18px,4.6vw,26px);
-    background:linear-gradient(90deg, var(--gold), var(--pink)); 
-    -webkit-background-clip:text; background-clip:text; color:transparent;
-    cursor: pointer;
-    padding: 4px 10px;
-    border-radius: 12px;
-    transition: background 0.2s ease;
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .title:hover {
-    background: rgba(255,255,255,0.08);
-  }
-  .title::before {
-    content: "← ";
-    font-size: 0.9em;
-  }
+  .title{ font-family:'Baloo 2', sans-serif; font-weight:800; font-size:clamp(18px,4.6vw,26px);
+    background:linear-gradient(90deg, var(--gold), var(--pink)); -webkit-background-clip:text; background-clip:text; color:transparent;
+    cursor: pointer; padding:4px 10px; border-radius:12px; transition:background 0.2s ease; display:inline-flex; align-items:center; gap:6px; }
+  .title:hover{ background:rgba(255,255,255,0.08); }
+  .title::before{ content:"← "; font-size:0.9em; }
   .header-right{ display:flex; align-items:center; gap:6px; }
   .icon-btn{ width:36px;height:36px;border-radius:12px; background:var(--panel-light);
     border:1px solid rgba(255,255,255,0.08); display:flex;align-items:center;justify-content:center; font-size:16px; cursor:pointer; flex-shrink:0; }
@@ -264,6 +247,7 @@
 
 <div id="ghost" style="display:none;"></div>
 
+<!-- ゲームオーバー -->
 <div id="overlay">
   <div class="panel-box">
     <h2>🔥 ゲームオーバー</h2>
@@ -274,6 +258,7 @@
   </div>
 </div>
 
+<!-- 汎用モーダル -->
 <div id="modalOverlay">
   <div class="panel-box" id="modalBox" style="position:relative;">
     <button class="close-x" id="modalClose">×</button>
@@ -300,45 +285,37 @@
     }
   });
 
-  // ===================== 設定読み込み =====================
+  // ===================== 外部設定読み込み =====================
+  let externalQuests = [];
+  let externalSkins = [];
+  let externalCommands = [];
+  let externalSettings = {};
+
   async function loadConfig() {
     try {
-      const [questsRes, skinsRes, commandsRes, settingsRes] = await Promise.all([
+      const [qRes, sRes, cRes, stRes] = await Promise.all([
         fetch(`${CONFIG_BASE_URL}/quests.json`),
         fetch(`${CONFIG_BASE_URL}/skins.json`),
         fetch(`${CONFIG_BASE_URL}/commands.json`),
         fetch(`${CONFIG_BASE_URL}/settings.json`)
       ]);
-      
-      const questsData = await questsRes.json();
-      const skinsData = await skinsRes.json();
-      const commandsData = await commandsRes.json();
-      const settingsData = await settingsRes.json();
-      
-      window.QUEST_DEFS = questsData.quests || [];
-      window.SKIN_DEFS = skinsData.skins || [];
-      window.COMMAND_DEFS = commandsData.commands || [];
-      window.SETTINGS = settingsData.gameSettings || {};
-      
-      console.log('✅ 設定ファイルを読み込みました！');
-      
-      if (window.QUEST_DEFS.length > 0) {
-        const savedProgress = await loadQuestProgress();
-        quests = window.QUEST_DEFS.map(q => ({
-          ...q,
-          progress: savedProgress[q.id]?.progress || 0,
-          claimed: savedProgress[q.id]?.claimed || false
-        }));
-      }
-      
+      const qData = await qRes.json();
+      const sData = await sRes.json();
+      const cData = await cRes.json();
+      const stData = await stRes.json();
+      externalQuests = qData.quests || [];
+      externalSkins = sData.skins || [];
+      externalCommands = cData.commands || [];
+      externalSettings = stData.gameSettings || {};
+      console.log('✅ 外部設定読み込み完了');
       return true;
-    } catch (err) {
-      console.warn('⚠️ 設定読み込み失敗、デフォルト値を使用します:', err.message);
+    } catch(e) {
+      console.warn('⚠️ 外部設定読み込み失敗、デフォルト値を使用', e);
       return false;
     }
   }
 
-  // ===================== クエスト進捗読み込み（サーバーから） =====================
+  // ===================== クエスト進捗（サーバー） =====================
   async function loadQuestProgress() {
     if (!authToken) return {};
     try {
@@ -348,63 +325,44 @@
       if (!res.ok) return {};
       const data = await res.json();
       return data.progress || {};
-    } catch (err) {
-      console.warn('⚠️ クエスト進捗読み込み失敗:', err.message);
-      return {};
-    }
+    } catch(e) { return {}; }
   }
 
-  // ===================== クエスト進捗保存（サーバーに） =====================
   async function saveQuestProgress(questId, progress, claimed = false) {
     if (!authToken) return;
     try {
       await fetch(`${API_BASE_URL}/api/quests/update`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
+        headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
         body: JSON.stringify({ questId, progress, claimed })
       });
-    } catch (err) {
-      console.warn('⚠️ クエスト進捗保存失敗:', err.message);
-    }
+    } catch(e) {}
   }
 
-  // ===================== クエスト報酬受け取り =====================
   async function claimQuestReward(questId, reward) {
     if (!authToken) return false;
     try {
       const res = await fetch(`${API_BASE_URL}/api/quests/claim`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${authToken}`
-        },
+        headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
         body: JSON.stringify({ questId, reward })
       });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.error || '報酬受け取りに失敗しました');
-      }
+      if (!res.ok) throw new Error('報酬受取失敗');
       const data = await res.json();
       coins = data.coins;
       updateCoinUI();
       return true;
-    } catch (err) {
-      console.warn('⚠️ 報酬受け取り失敗:', err.message);
-      alert(err.message);
+    } catch(e) {
+      alert(e.message);
       return false;
     }
   }
 
-  // ===================== クエスト達成チェック =====================
   function checkQuestCompletion() {
-    if (!window.QUEST_DEFS || window.QUEST_DEFS.length === 0) return;
-    
-    window.QUEST_DEFS.forEach(qDef => {
-      const currentValue = dailyStats[qDef.statKey] || 0;
-      if (currentValue >= qDef.target) {
+    if (!externalQuests.length) return;
+    externalQuests.forEach(qDef => {
+      const val = dailyStats[qDef.statKey] || 0;
+      if (val >= qDef.target) {
         const existing = quests.find(q => q.id === qDef.id);
         if (existing && !existing.claimed && existing.progress < qDef.target) {
           existing.progress = qDef.target;
@@ -417,7 +375,25 @@
     });
   }
 
-  // ===================== ゲーム本体 =====================
+  // ===================== 管理者設定 =====================
+  let adminDisabledBlocks = [];
+  let adminSafetyMode = false;
+
+  async function loadAdminSettings() {
+    if (!authToken || currentUserId !== 'admin') return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/block-settings`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        adminDisabledBlocks = data.disabledBlocks || [];
+        adminSafetyMode = data.safetyMode || false;
+      }
+    } catch(e) {}
+  }
+
+  // ===================== 以下、ゲーム本体（元のv1.0をベース） =====================
   let SIZE = 8;
   const COLORS = [
     {bg:'linear-gradient(135deg,#FF8B8B,#FF6B6B)'},
@@ -444,7 +420,8 @@
     return MODE_COIN_MULT[m] * sizeCoinMult(s);
   }
 
-  const SKINS = [];
+  // スキンは外部から読み込むので、空配列で初期化（後で読み込む）
+  let SKINS = [];
   let ownedSkins = ['default'];
   let equippedSkin = 'default';
 
@@ -493,9 +470,6 @@
   let soundOn = true;
   let dragState = null;
 
-  let adminDisabledBlocks = [];
-  let adminSafetyMode = false;
-
   const DAILY_STATS_DEFAULT = { linesCleared:0, piecesPlaced:0, combos:0, gamesPlayed:0, scoreEarned:0,
     bestSingleGameScore:0, tripleClearCount:0, maxComboStreak:0, hardModeGamesPlayed:0, maxNoClearStreak:0, bigPiecesPlaced:0 };
   let dailyStats = { date:'', ...DAILY_STATS_DEFAULT };
@@ -514,6 +488,7 @@
   function boardIndex(r,c){ return r*SIZE+c; }
   function todayKey(){ return new Date().toISOString().slice(0,10); }
 
+  // ボード初期化
   function initBoard(){
     boardEl.innerHTML = ''; board = []; cellEls = [];
     const gap = SIZE<=8 ? 4 : (SIZE<=12 ? 3 : 2);
@@ -703,9 +678,7 @@
   }
   function checkGameOver(){
     if (currentUserId === 'admin' && adminSafetyMode) {
-      if (tray.every(p => p.used)) {
-        fillTray();
-      }
+      if (tray.every(p => p.used)) fillTray();
       return;
     }
     const remaining = tray.filter(p=>!p.used);
@@ -713,6 +686,7 @@
     if(!stillPossible && remaining.length>0) endGame();
   }
 
+  // ドラッグ関連（元のコードそのまま）
   function startDrag(e, trayIdx){
     e.preventDefault();
     unlockAudio();
@@ -886,67 +860,98 @@
     return earned;
   }
 
-  function pickDailyQuests(){
-    const pool = [...QUEST_POOL];
-    const picked = [];
-    for(let i=0;i<3 && pool.length>0;i++){
-      const idx = Math.floor(Math.random()*pool.length);
-      const q = pool.splice(idx,1)[0];
-      picked.push({ ...q, progress:0, claimed:false });
-    }
-    return picked;
-  }
-
-  async function loadDailyQuests(){
+  // ===================== クエスト関連（外部定義＋サーバー保存） =====================
+  // 旧 quests 配列は外部定義から生成するので、loadDailyQuests を修正
+  async function loadDailyQuests() {
     const today = todayKey();
-    try{
+    // 外部定義がなければデフォルト（念のため）
+    if (externalQuests.length === 0) {
+      // フォールバック（旧QUEST_POOL相当）
+      const fallback = [
+        { id:'singleScore400', desc:'1回のプレイでスコア400点以上', statKey:'bestSingleGameScore', target:400, reward:50 },
+        { id:'tripleClear', desc:'1回の設置で3ライン以上同時に消す', statKey:'tripleClearCount', target:1, reward:70 },
+        { id:'comboStreak4', desc:'コンボストリークを4連続', statKey:'maxComboStreak', target:4, reward:65 },
+        { id:'lines25', desc:'ラインを合計25本消す', statKey:'linesCleared', target:25, reward:55 },
+        { id:'play3', desc:'ゲームを3回プレイ', statKey:'gamesPlayed', target:3, reward:30 }
+      ];
+      // ローカルストレージから進捗を復元（旧方式）
+      try {
+        const res = await window.storage.get(STORAGE_QUESTS, false);
+        if (res && res.value) {
+          const parsed = JSON.parse(res.value);
+          if (parsed.date === today) {
+            dailyStats = { ...DAILY_STATS_DEFAULT, ...parsed.stats, date:today };
+            quests = parsed.quests;
+            return;
+          }
+        }
+      } catch(e) {}
+      dailyStats = { date:today, ...DAILY_STATS_DEFAULT };
+      quests = fallback.map(q => ({ ...q, progress:0, claimed:false }));
+      await saveDailyQuests();
+      return;
+    }
+
+    // 外部定義あり → サーバーから進捗を取得
+    const progress = await loadQuestProgress();
+    quests = externalQuests.map(q => ({
+      ...q,
+      progress: progress[q.id]?.progress || 0,
+      claimed: progress[q.id]?.claimed || false
+    }));
+    // dailyStats はローカルに保存（サーバーとは別）
+    try {
       const res = await window.storage.get(STORAGE_QUESTS, false);
-      if(res && res.value){
+      if (res && res.value) {
         const parsed = JSON.parse(res.value);
-        if(parsed.date === today){
+        if (parsed.date === today) {
           dailyStats = { ...DAILY_STATS_DEFAULT, ...parsed.stats, date:today };
-          quests = parsed.quests;
-          return;
         }
       }
-    }catch(err){}
-    dailyStats = { date:today, ...DAILY_STATS_DEFAULT };
-    quests = pickDailyQuests();
-    await saveDailyQuests();
+    } catch(e) {}
+    if (!dailyStats.date || dailyStats.date !== today) {
+      dailyStats = { date:today, ...DAILY_STATS_DEFAULT };
+    }
   }
 
   async function saveDailyQuests(){
     dailyStats.date = todayKey();
-    try{ await window.storage.set(STORAGE_QUESTS, JSON.stringify({date:dailyStats.date, stats:dailyStats, quests}), false); }catch(err){}
+    try{ await window.storage.set(STORAGE_QUESTS, JSON.stringify({date:dailyStats.date, stats:dailyStats, quests}), false); }catch(e){}
   }
 
   function updateQuestProgress(){
-    quests.forEach(q=>{ q.progress = dailyStats[q.statKey] || 0; });
+    // 外部定義の進捗を dailyStats から更新
+    quests.forEach(q => {
+      q.progress = dailyStats[q.statKey] || 0;
+    });
     saveDailyQuests();
     if(modalOverlay.classList.contains('show') && modalContent.dataset.mode==='quests') renderQuestModal();
   }
 
+  // 旧 claimQuest はサーバー版に置き換え（内部で claimQuestReward を呼ぶ）
   function claimQuest(id){
     const q = quests.find(q=>q.id===id);
     if(!q || q.claimed || q.progress < q.target) return;
-    q.claimed = true;
-    coins += q.reward;
-    updateCoinUI();
-    saveDailyQuests();
-    renderQuestModal();
-    syncToServer();
+    // サーバー経由で報酬を受け取る
+    claimQuestReward(q.id, q.reward).then(success => {
+      if (success) {
+        q.claimed = true;
+        updateCoinUI();
+        saveDailyQuests();
+        renderQuestModal();
+        syncToServer();
+      }
+    });
   }
 
   function renderQuestModal(){
     modalContent.dataset.mode = 'quests';
     let html = `<h2 style="color:var(--mint);">📋 デイリークエスト</h2><div class="sub">毎日リセットされます。がんばって集めよう！</div>`;
-    
     if (!quests || quests.length === 0) {
       html += `<div class="sub">🔄 クエスト情報を読み込み中...</div>`;
       modalContent.innerHTML = html;
       return;
     }
-    
     quests.forEach(q => {
       const pct = Math.min(100, Math.floor((q.progress / q.target) * 100));
       const done = q.progress >= q.target;
@@ -956,32 +961,26 @@
           <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div>
           <div class="quest-foot">
             <span>${Math.min(q.progress, q.target)} / ${q.target}</span>
-            <button class="claim-btn" data-qid="${q.id}" data-reward="${q.reward}" ${(!done || q.claimed) ? 'disabled' : ''}>
+            <button class="claim-btn" data-qid="${q.id}" ${(!done||q.claimed)?'disabled':''}>
               ${q.claimed ? '✅ 受取済み' : `🪙${q.reward} 受け取る`}
             </button>
           </div>
-        </div>
-      `;
+        </div>`;
     });
     modalContent.innerHTML = html;
-    
     modalContent.querySelectorAll('.claim-btn:not([disabled])').forEach(btn => {
-      btn.addEventListener('click', async function() {
-        const questId = this.dataset.qid;
-        const reward = parseInt(this.dataset.reward, 10);
-        const success = await claimQuestReward(questId, reward);
-        if (success) {
-          const q = quests.find(q => q.id === questId);
-          if (q) q.claimed = true;
-          renderQuestModal();
-          syncToServer();
-        }
-      });
+      btn.addEventListener('click', ()=>claimQuest(btn.dataset.qid));
     });
   }
 
+  // ===================== スキン関連（外部定義を使用） =====================
   function applySkin(id){
+    // SKINS が空なら外部から読み込む
+    if (SKINS.length === 0 && externalSkins.length > 0) {
+      SKINS = externalSkins;
+    }
     const skin = SKINS.find(s=>s.id===id) || SKINS[0];
+    if (!skin) return;
     equippedSkin = skin.id;
     Object.entries(skin.vars).forEach(([k,v])=>document.documentElement.style.setProperty(k,v));
     const titleEl = document.querySelector('.title');
@@ -997,6 +996,7 @@
   }
 
   function buySkin(id){
+    if (SKINS.length === 0 && externalSkins.length > 0) SKINS = externalSkins;
     const skin = SKINS.find(s=>s.id===id);
     if(!skin || ownedSkins.includes(id) || coins < skin.price) return;
     coins -= skin.price;
@@ -1023,13 +1023,16 @@
         equippedSkin = parsed.equipped || 'default';
       }
     }catch(err){ ownedSkins = ['default']; equippedSkin = 'default'; }
+    // SKINS を外部から読み込む
+    if (externalSkins.length > 0) SKINS = externalSkins;
     applySkin(equippedSkin);
   }
 
   async function saveSkinsData(){
-    try{ await window.storage.set(STORAGE_SKINS, JSON.stringify({owned:ownedSkins, equipped:equippedSkin}), false); }catch(err){}
+    try{ await window.storage.set(STORAGE_SKINS, JSON.stringify({owned:ownedSkins, equipped:equippedSkin}), false); }catch(e){}
   }
 
+  // ===================== 設定 =====================
   async function loadSettings(){
     let isFirstTime = true;
     try{
@@ -1044,7 +1047,7 @@
     return isFirstTime;
   }
   async function saveSettings(){
-    try{ await window.storage.set(STORAGE_SETTINGS, JSON.stringify({mode:currentMode, size:SIZE}), false); }catch(err){}
+    try{ await window.storage.set(STORAGE_SETTINGS, JSON.stringify({mode:currentMode, size:SIZE}), false); }catch(e){}
   }
 
   function renderModeTab(){
@@ -1071,6 +1074,7 @@
   }
 
   function renderSkinTab(){
+    if (SKINS.length === 0 && externalSkins.length > 0) SKINS = externalSkins;
     let html = `<div class="sub" style="margin-bottom:10px;">🪙 ${coins} 所持中。ゲームで貯めたコインで見た目を変えられます。</div>`;
     SKINS.forEach(skin=>{
       const owned = ownedSkins.includes(skin.id);
@@ -1125,10 +1129,8 @@
       if(slider){
         slider.addEventListener('input', (e)=>{
           pendingSize = parseInt(e.target.value,10);
-          const label = document.getElementById('sizeVal');
-          if(label) label.textContent = pendingSize;
-          const multLabel = document.getElementById('totalMultVal');
-          if(multLabel) multLabel.textContent = (MODE_COIN_MULT[pendingMode] * sizeCoinMult(pendingSize)).toFixed(2);
+          document.getElementById('sizeVal').textContent = pendingSize;
+          document.getElementById('totalMultVal').textContent = (MODE_COIN_MULT[pendingMode] * sizeCoinMult(pendingSize)).toFixed(2);
         });
       }
       const applyBtn = document.getElementById('applyModeBtn');
@@ -1142,23 +1144,25 @@
     modalOverlay.classList.add('show');
   });
 
+  // ===================== 永続化 =====================
   async function loadBest(){
     try{ const res = await window.storage.get(STORAGE_BEST, false); if(res && res.value) best = parseInt(res.value,10)||0; }catch(err){ best=0; }
     bestValEl.textContent = best;
   }
-  async function saveBest(val){ try{ await window.storage.set(STORAGE_BEST, String(val), false); }catch(err){} }
+  async function saveBest(val){ try{ await window.storage.set(STORAGE_BEST, String(val), false); }catch(e){} }
   async function loadCoins(){
     try{ const res = await window.storage.get(STORAGE_COINS, false); if(res && res.value) coins = parseInt(res.value,10)||0; }catch(err){ coins=0; }
     coinValEl.textContent = coins;
   }
-  async function saveCoins(val){ try{ await window.storage.set(STORAGE_COINS, String(val), false); }catch(err){} }
+  async function saveCoins(val){ try{ await window.storage.set(STORAGE_COINS, String(val), false); }catch(e){} }
 
+  // ===================== サウンド =====================
   let audioCtx = null;
   function unlockAudio(){
     try{
       if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
       if(audioCtx.state === 'suspended') audioCtx.resume();
-    }catch(err){}
+    }catch(e){}
   }
   function playSound(type){
     if(!soundOn) return;
@@ -1186,7 +1190,7 @@
         g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime+0.18);
         o.start(); o.stop(audioCtx.currentTime+0.18);
       }
-    }catch(err){}
+    }catch(e){}
   }
   soundBtn.addEventListener('click', ()=>{
     unlockAudio();
@@ -1195,6 +1199,7 @@
   });
   document.body.addEventListener('pointerdown', unlockAudio, { once:true });
 
+  // ===================== ゲームオーバー =====================
   function endGame(){
     dailyStats.gamesPlayed += 1;
     if(currentMode==='hard' || currentMode==='extreme') dailyStats.hardModeGamesPlayed = (dailyStats.hardModeGamesPlayed||0) + 1;
@@ -1207,6 +1212,7 @@
     coinEarnedNoteEl.textContent = earned>0 ? `🪙 +${earned} コイン獲得！` : '';
     overlayEl.classList.add('show');
     syncToServer();
+    // クエスト達成チェック
     checkQuestCompletion();
   }
   restartBtn.addEventListener('click', ()=>{
@@ -1217,6 +1223,7 @@
     fillTray();
   });
 
+  // ===================== モーダル共通 =====================
   function closeModal(){ modalOverlay.classList.remove('show'); modalContent.dataset.mode=''; }
   modalClose.addEventListener('click', closeModal);
   modalOverlay.addEventListener('click', (e)=>{ if(e.target===modalOverlay) closeModal(); });
@@ -1226,6 +1233,7 @@
     modalOverlay.classList.add('show');
   });
 
+  // ===================== アカウント =====================
   function updateAccountButton(){
     accountBtn.textContent = currentUserId ? '👤' : '👤';
     accountBtn.title = currentUserId ? `ログイン中: ${currentUserId}` : '未ログイン';
@@ -1237,26 +1245,14 @@
     }
   }
 
-  async function loadAdminSettings() {
-    if (!authToken || currentUserId !== 'admin') return;
-    try {
-      const res = await fetch(`${API_BASE_URL}/api/admin/block-settings`, {
-        headers: { 'Authorization': `Bearer ${authToken}` }
-      });
-      if (res.ok) {
-        const data = await res.json();
-        adminDisabledBlocks = data.disabledBlocks || [];
-        adminSafetyMode = data.safetyMode || false;
-      }
-    } catch (err) {}
-  }
-
+  // ===================== 管理者パネル =====================
   async function renderAdminPanel() {
     modalContent.dataset.mode = 'admin';
     let html = `
       <h2 style="color:var(--gold);">🔧 管理者パネル</h2>
       <div class="sub">admin専用設定です。ゲームバランスの調整に使えます。</div>
     `;
+    // コイン編集
     html += `
       <div class="admin-setting-item">
         <div class="label-row"><span>🪙 コイン編集</span></div>
@@ -1264,6 +1260,7 @@
         <button class="primary-btn" id="adminCoinsBtn">コインを更新</button>
       </div>
     `;
+    // スコア編集
     html += `
       <div class="admin-setting-item">
         <div class="label-row"><span>🏆 ベストスコア編集</span></div>
@@ -1271,6 +1268,7 @@
         <button class="primary-btn" id="adminScoreBtn">スコアを更新</button>
       </div>
     `;
+    // ブロック設定
     html += `
       <div class="admin-setting-item">
         <div class="label-row"><span>🧩 ブロック出現設定（オフにすると出現しなくなります）</span></div>
@@ -1300,6 +1298,7 @@
       `;
     });
     html += `</div></div>`;
+    // セーフティ
     html += `
       <div class="admin-setting-item">
         <div class="label-row">
@@ -1322,7 +1321,7 @@
       try {
         const res = await fetch(`${API_BASE_URL}/api/admin/coins`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
           body: JSON.stringify({ coins: val })
         });
         if (res.ok) {
@@ -1330,7 +1329,7 @@
           updateCoinUI();
           renderAdminPanel();
         }
-      } catch (err) {}
+      } catch(e) {}
     });
 
     document.getElementById('adminScoreBtn').addEventListener('click', async () => {
@@ -1339,7 +1338,7 @@
       try {
         const res = await fetch(`${API_BASE_URL}/api/admin/score`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
           body: JSON.stringify({ bestScore: val })
         });
         if (res.ok) {
@@ -1347,7 +1346,7 @@
           bestValEl.textContent = best;
           renderAdminPanel();
         }
-      } catch (err) {}
+      } catch(e) {}
     });
 
     document.querySelectorAll('.toggle-switch[data-block-index]').forEach(el => {
@@ -1358,7 +1357,7 @@
         try {
           const res = await fetch(`${API_BASE_URL}/api/admin/block-toggle`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
             body: JSON.stringify({ blockIndex: idx, enabled })
           });
           if (res.ok) {
@@ -1366,7 +1365,7 @@
             adminDisabledBlocks = data.settings.disabledBlocks || [];
             renderAdminPanel();
           }
-        } catch (err) {}
+        } catch(e) {}
       });
     });
 
@@ -1377,14 +1376,14 @@
         try {
           const res = await fetch(`${API_BASE_URL}/api/admin/safety-toggle`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
             body: JSON.stringify({ safetyMode: newMode })
           });
           if (res.ok) {
             adminSafetyMode = newMode;
             renderAdminPanel();
           }
-        } catch (err) {}
+        } catch(e) {}
       });
     }
   }
@@ -1396,6 +1395,7 @@
     }
   });
 
+  // ===================== 認証 =====================
   function renderAuthModal(){
     modalContent.dataset.mode = 'auth';
     if(currentUserId){
@@ -1521,7 +1521,7 @@
         headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
         body: JSON.stringify({ bestScore: best, coins, skins: ownedSkins, equippedSkin, quests })
       });
-    }catch(err){ console.warn('サーバー同期に失敗しました(オフラインでもゲームは続行できます):', err.message); }
+    }catch(e){ console.warn('サーバー同期失敗:', e.message); }
   }
 
   async function syncFromServer(){
@@ -1533,9 +1533,10 @@
       best = Math.max(best, data.bestScore||0);
       coins = Math.max(coins, data.coins||0);
       bestValEl.textContent = best; updateCoinUI(); saveBest(best);
-    }catch(err){ console.warn('サーバーからの取得に失敗しました:', err.message); }
+    }catch(e){ console.warn('サーバー取得失敗:', e.message); }
   }
 
+  // ===================== ランキング =====================
   async function renderRankingModal() {
     modalContent.dataset.mode = 'ranking';
     modalContent.innerHTML = `
@@ -1574,7 +1575,7 @@
           });
           const syncData = await syncRes.json();
           myScore = syncData.bestScore || 0;
-        } catch (err) {}
+        } catch (e) {}
         if (myScore > 0) {
           const higherCount = data.top ? data.top.filter(u => u.best_score > myScore).length : 0;
           const myInTop = data.top ? data.top.some(u => u.id === currentUserId) : false;
@@ -1632,13 +1633,16 @@
     modalOverlay.classList.add('show');
   });
 
+  // ===================== 初期化 =====================
   (async function start(){
+    // 外部設定を先読み
+    await loadConfig();
+    // 各種読み込み
     await loadBest();
     await loadCoins();
     await loadSkinsData();
     const isFirstTime = await loadSettings();
     await loadDailyQuests();
-    await loadConfig();
     updateAccountButton();
     updateModeBadge();
     initBoard();
@@ -1649,6 +1653,7 @@
       modalOverlay.classList.add('show');
     }
   })();
+
 })();
 </script>
 </body>
