@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <title>キャンディブラスト</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
@@ -20,12 +20,35 @@
     background:radial-gradient(circle at 50% -10%, var(--bg-deep2), var(--bg-deep) 60%);
     font-family:'Nunito', sans-serif; color:var(--text);
     overflow:hidden; touch-action:none; user-select:none;
+    touch-action: pan-x pan-y;
+    -webkit-text-size-adjust: 100%;
+  }
+  img, canvas, video, iframe {
+    max-width: 100%;
+    touch-action: none;
   }
   #app{ display:flex; flex-direction:column; align-items:center; height:100%; width:100%;
     padding: max(10px, env(safe-area-inset-top)) 12px max(10px, env(safe-area-inset-bottom)); gap:8px; }
   header{ width:100%; max-width:520px; display:flex; align-items:center; justify-content:space-between; padding:4px 6px; gap:8px; }
-  .title{ font-family:'Baloo 2', sans-serif; font-weight:800; font-size:clamp(18px,4.6vw,26px);
-    background:linear-gradient(90deg, var(--gold), var(--pink)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  .title{ 
+    font-family:'Baloo 2', sans-serif; font-weight:800; font-size:clamp(18px,4.6vw,26px);
+    background:linear-gradient(90deg, var(--gold), var(--pink)); 
+    -webkit-background-clip:text; background-clip:text; color:transparent;
+    cursor: pointer;
+    padding: 4px 10px;
+    border-radius: 12px;
+    transition: background 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .title:hover {
+    background: rgba(255,255,255,0.08);
+  }
+  .title::before {
+    content: "← ";
+    font-size: 0.9em;
+  }
   .header-right{ display:flex; align-items:center; gap:6px; }
   .icon-btn{ width:36px;height:36px;border-radius:12px; background:var(--panel-light);
     border:1px solid rgba(255,255,255,0.08); display:flex;align-items:center;justify-content:center; font-size:16px; cursor:pointer; flex-shrink:0; }
@@ -95,7 +118,6 @@
   .ghost-btn{ background:transparent; border:1px solid rgba(255,255,255,0.15); border-radius:16px; padding:11px 20px;
     font-weight:700; font-size:14px; color:var(--text); cursor:pointer; width:100%; margin-top:8px; }
 
-  /* ---- auth modal ---- */
   .tab-row{ display:flex; gap:6px; margin-bottom:16px; background:var(--panel-light); border-radius:14px; padding:4px; }
   .tab-btn{ flex:1; border:none; background:transparent; color:var(--text-dim); font-weight:700; font-size:13px;
     padding:9px 4px; border-radius:11px; cursor:pointer; }
@@ -111,7 +133,6 @@
   .auth-msg.ok{ color:var(--mint); }
   .close-x{ position:absolute; top:14px; right:16px; font-size:20px; color:var(--text-dim); cursor:pointer; background:none; border:none; }
 
-  /* ---- quest modal ---- */
   .quest-item{ background:var(--panel-light); border-radius:14px; padding:12px; text-align:left; margin-bottom:10px; }
   .quest-item .qtitle{ font-weight:700; font-size:14px; margin-bottom:6px; }
   .quest-bar-bg{ background:rgba(255,255,255,0.1); border-radius:8px; height:8px; overflow:hidden; margin-bottom:8px; }
@@ -120,11 +141,9 @@
   .claim-btn{ background:var(--gold); border:none; border-radius:10px; padding:6px 12px; font-weight:800; font-size:12px; color:#2a1730; cursor:pointer; }
   .claim-btn:disabled{ background:rgba(255,255,255,0.15); color:var(--text-dim); cursor:default; }
 
-  /* ---- mode badge ---- */
   .title-wrap{ display:flex; flex-direction:column; gap:1px; }
   .mode-badge{ font-size:10.5px; color:var(--text-dim); font-weight:700; letter-spacing:0.3px; }
 
-  /* ---- settings modal: mode select ---- */
   .mode-card{ background:var(--panel-light); border-radius:14px; padding:12px; margin-bottom:8px; text-align:left;
     cursor:pointer; border:2px solid transparent; transition:border-color 0.15s ease, background 0.15s ease; }
   .mode-card.selected{ border-color:var(--gold); background:rgba(255,217,61,0.12); }
@@ -136,16 +155,88 @@
   .size-row input[type=range]{ width:100%; accent-color:var(--gold); margin-top:6px; }
   .size-row input[type=range]:disabled{ opacity:0.4; }
 
-  /* ---- skin shop ---- */
   .skin-swatches{ display:flex; gap:5px; }
   .swatch{ width:20px; height:20px; border-radius:50%; box-shadow: inset 0 2px 3px rgba(255,255,255,0.4), inset 0 -2px 3px rgba(0,0,0,0.2); }
+
+  /* admin panel */
+  .admin-setting-item {
+    background: var(--panel-light);
+    border-radius: 14px;
+    padding: 12px;
+    margin-bottom: 10px;
+    text-align: left;
+  }
+  .admin-setting-item .label-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+  }
+  .admin-setting-item .label-row span {
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .admin-setting-item input[type="number"] {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: var(--bg-deep2);
+    color: var(--text);
+    font-size: 15px;
+    font-family: 'Nunito', sans-serif;
+    margin-bottom: 6px;
+  }
+  .admin-setting-item input[type="number"]:focus {
+    outline: 2px solid var(--gold);
+  }
+  .toggle-switch {
+    position: relative;
+    width: 48px;
+    height: 28px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 14px;
+    cursor: pointer;
+    transition: background 0.3s ease;
+    flex-shrink: 0;
+  }
+  .toggle-switch.active {
+    background: var(--gold);
+  }
+  .toggle-switch .knob {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 22px;
+    height: 22px;
+    background: white;
+    border-radius: 50%;
+    transition: transform 0.3s ease;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+  }
+  .toggle-switch.active .knob {
+    transform: translateX(20px);
+  }
+  .block-grid-preview {
+    display: grid;
+    gap: 2px;
+    margin-top: 4px;
+  }
+  .block-grid-preview .block-cell {
+    aspect-ratio: 1/1;
+    border-radius: 3px;
+    background: var(--gold);
+  }
+  .block-grid-preview .block-cell.empty {
+    background: transparent;
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <header>
     <div class="title-wrap">
-      <div class="title">キャンディブラスト</div>
+      <div class="title" id="backButton">キャンディブラスト</div>
       <div class="mode-badge" id="modeBadge"></div>
     </div>
     <div class="header-right">
@@ -153,8 +244,8 @@
       <div class="icon-btn" id="settingsBtn" title="モード・スキン設定">⚙️</div>
       <div class="icon-btn" id="soundBtn">🔊</div>
       <div class="icon-btn" id="accountBtn">👤</div>
-      <!-- ⭐ ランキングボタン追加 -->
       <div class="icon-btn" id="rankingBtn" title="ランキング">🏆</div>
+      <div class="icon-btn" id="adminPanelBtn" title="管理者パネル" style="display:none;">🔧</div>
     </div>
   </header>
 
@@ -174,7 +265,6 @@
 
 <div id="ghost" style="display:none;"></div>
 
-<!-- ゲームオーバー -->
 <div id="overlay">
   <div class="panel-box">
     <h2>🔥 ゲームオーバー</h2>
@@ -185,7 +275,6 @@
   </div>
 </div>
 
-<!-- 汎用モーダル -->
 <div id="modalOverlay">
   <div class="panel-box" id="modalBox" style="position:relative;">
     <button class="close-x" id="modalClose">×</button>
@@ -198,6 +287,20 @@
   // ===================== 設定 =====================
   const API_BASE_URL = 'https://candyblast-server.onrender.com';
 
+  // ===================== ズーム無効化 =====================
+  document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
+  document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
+  document.addEventListener('gestureend', function(e) { e.preventDefault(); });
+
+  // ===================== 戻るボタン =====================
+  document.getElementById('backButton').addEventListener('click', function(e) {
+    e.preventDefault();
+    if (confirm('本当に戻りますか？\nゲームの進行は保存されません。')) {
+      window.location.href = 'https://my-link-portal.onrender.com';
+    }
+  });
+
+  // ===================== 以下、ゲーム本体 =====================
   let SIZE = 8;
   const COLORS = [
     {bg:'linear-gradient(135deg,#FF8B8B,#FF6B6B)'},
@@ -209,7 +312,6 @@
     {bg:'linear-gradient(135deg,#FFE270,#FFD93D)'}
   ];
 
-  // ===================== ゲームモード =====================
   const MODES = {
     soft:    { label:'柔らかい', emoji:'🍮' },
     baked:   { label:'焼成',     emoji:'🍪' },
@@ -225,7 +327,6 @@
     return MODE_COIN_MULT[m] * sizeCoinMult(s);
   }
 
-  // ===================== スキン =====================
   const SKINS = [
     { id:'default', name:'ミッドナイトキャンディ', price:0, desc:'定番のパープル×ゴールドの夜空テーマ。',
       vars:{ '--bg-deep':'#1a1233','--bg-deep2':'#241a45','--panel':'#2c2054','--panel-light':'#382a68',
@@ -331,7 +432,8 @@
   const settingsBtn = document.getElementById('settingsBtn');
   const modeBadgeEl = document.getElementById('modeBadge');
   const accountBtn = document.getElementById('accountBtn');
-  const rankingBtn = document.getElementById('rankingBtn'); // ⭐追加
+  const rankingBtn = document.getElementById('rankingBtn');
+  const adminPanelBtn = document.getElementById('adminPanelBtn');
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContent = document.getElementById('modalContent');
   const modalClose = document.getElementById('modalClose');
@@ -340,6 +442,10 @@
   let score = 0, best = 0, coins = 0, streak = 0, noClearStreak = 0;
   let soundOn = true;
   let dragState = null;
+
+  // admin設定
+  let adminDisabledBlocks = [];
+  let adminSafetyMode = false;
 
   const DAILY_STATS_DEFAULT = { linesCleared:0, piecesPlaced:0, combos:0, gamesPlayed:0, scoreEarned:0,
     bestSingleGameScore:0, tripleClearCount:0, maxComboStreak:0, hardModeGamesPlayed:0, maxNoClearStreak:0, bigPiecesPlaced:0 };
@@ -485,6 +591,12 @@
   }
 
   function fillTray(){
+    // adminのブロック除外設定を反映
+    let availableShapes = SHAPES;
+    if (currentUserId === 'admin' && adminDisabledBlocks.length > 0) {
+      availableShapes = SHAPES.filter((_, idx) => !adminDisabledBlocks.includes(idx));
+      if (availableShapes.length === 0) availableShapes = SHAPES; // 全部オフになったらリセット
+    }
     tray = [
       randomShapeColor(pickShapeForMode()),
       randomShapeColor(pickShapeForMode()),
@@ -543,6 +655,14 @@
     return false;
   }
   function checkGameOver(){
+    // 強制セーフティモードがONならゲームオーバーにならない
+    if (currentUserId === 'admin' && adminSafetyMode) {
+      // トレイが空なら補充
+      if (tray.every(p => p.used)) {
+        fillTray();
+      }
+      return;
+    }
     const remaining = tray.filter(p=>!p.used);
     const stillPossible = remaining.some(p=>anyValidPlacement(p.shape));
     if(!stillPossible && remaining.length>0) endGame();
@@ -1066,7 +1186,186 @@
   function updateAccountButton(){
     accountBtn.textContent = currentUserId ? '👤' : '👤';
     accountBtn.title = currentUserId ? `ログイン中: ${currentUserId}` : '未ログイン';
+    // adminボタンの表示制御
+    if (currentUserId === 'admin') {
+      adminPanelBtn.style.display = 'flex';
+      loadAdminSettings();
+    } else {
+      adminPanelBtn.style.display = 'none';
+    }
   }
+
+  // ===================== 管理者パネル =====================
+  async function loadAdminSettings() {
+    if (!authToken || currentUserId !== 'admin') return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/admin/block-settings`, {
+        headers: { 'Authorization': `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        adminDisabledBlocks = data.disabledBlocks || [];
+        adminSafetyMode = data.safetyMode || false;
+      }
+    } catch (err) {}
+  }
+
+  async function renderAdminPanel() {
+    modalContent.dataset.mode = 'admin';
+    let html = `
+      <h2 style="color:var(--gold);">🔧 管理者パネル</h2>
+      <div class="sub">admin専用設定です。ゲームバランスの調整に使えます。</div>
+    `;
+
+    // コイン編集
+    html += `
+      <div class="admin-setting-item">
+        <div class="label-row"><span>🪙 コイン編集</span></div>
+        <input type="number" id="adminCoinsInput" value="${coins}" min="0" step="1">
+        <button class="primary-btn" id="adminCoinsBtn">コインを更新</button>
+      </div>
+    `;
+
+    // ベストスコア編集
+    html += `
+      <div class="admin-setting-item">
+        <div class="label-row"><span>🏆 ベストスコア編集</span></div>
+        <input type="number" id="adminScoreInput" value="${best}" min="0" step="1">
+        <button class="primary-btn" id="adminScoreBtn">スコアを更新</button>
+      </div>
+    `;
+
+    // ブロック一覧＋オンオフ
+    html += `
+      <div class="admin-setting-item">
+        <div class="label-row"><span>🧩 ブロック出現設定（オフにすると出現しなくなります）</span></div>
+        <div style="max-height:200px; overflow-y:auto;">
+    `;
+    SHAPES.forEach((shape, idx) => {
+      const isOff = adminDisabledBlocks.includes(idx);
+      const {rows, cols} = shapeBounds(shape);
+      const size = 24;
+      html += `
+        <div style="display:flex; align-items:center; gap:10px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+          <div class="block-grid-preview" style="grid-template-columns:repeat(${cols}, ${size}px); grid-template-rows:repeat(${rows}, ${size}px);">
+            ${Array.from({length: rows*cols}, (_, i) => {
+              const r = Math.floor(i/cols), c = i%cols;
+              const filled = shape.some(([sr,sc])=>sr===r&&sc===c);
+              return `<div class="block-cell ${filled?'':'empty'}"></div>`;
+            }).join('')}
+          </div>
+          <span style="font-size:12px; color:var(--text-dim);">#${idx}</span>
+          <div style="margin-left:auto; display:flex; align-items:center; gap:8px;">
+            <span style="font-size:12px; color:${isOff ? 'var(--coral)' : 'var(--mint)'};">${isOff ? 'OFF' : 'ON'}</span>
+            <div class="toggle-switch ${isOff ? '' : 'active'}" data-block-index="${idx}" style="cursor:pointer;">
+              <div class="knob"></div>
+            </div>
+          </div>
+        </div>
+      `;
+    });
+    html += `</div></div>`;
+
+    // 強制セーフティ
+    html += `
+      <div class="admin-setting-item">
+        <div class="label-row">
+          <span>🛡️ 強制セーフティモード</span>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <span style="font-size:12px; color:${adminSafetyMode ? 'var(--gold)' : 'var(--text-dim)'};">${adminSafetyMode ? 'ON' : 'OFF'}</span>
+            <div class="toggle-switch ${adminSafetyMode ? 'active' : ''}" id="safetyToggle" style="cursor:pointer;">
+              <div class="knob"></div>
+            </div>
+          </div>
+        </div>
+        <div class="sub" style="margin:4px 0 0;">ONにするとゲームオーバーが発生しなくなります（adminのみ）。</div>
+      </div>
+    `;
+
+    modalContent.innerHTML = html;
+
+    // イベントバインド
+    document.getElementById('adminCoinsBtn').addEventListener('click', async () => {
+      const val = parseInt(document.getElementById('adminCoinsInput').value, 10);
+      if (isNaN(val) || val < 0) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/admin/coins`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({ coins: val })
+        });
+        if (res.ok) {
+          coins = val;
+          updateCoinUI();
+          renderAdminPanel();
+        }
+      } catch (err) {}
+    });
+
+    document.getElementById('adminScoreBtn').addEventListener('click', async () => {
+      const val = parseInt(document.getElementById('adminScoreInput').value, 10);
+      if (isNaN(val) || val < 0) return;
+      try {
+        const res = await fetch(`${API_BASE_URL}/api/admin/score`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+          body: JSON.stringify({ bestScore: val })
+        });
+        if (res.ok) {
+          best = val;
+          bestValEl.textContent = best;
+          renderAdminPanel();
+        }
+      } catch (err) {}
+    });
+
+    // ブロックトグル
+    document.querySelectorAll('.toggle-switch[data-block-index]').forEach(el => {
+      el.addEventListener('click', async function() {
+        const idx = parseInt(this.dataset.blockIndex, 10);
+        const currentOff = adminDisabledBlocks.includes(idx);
+        const enabled = currentOff; // 今OFFならONにする
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/admin/block-toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            body: JSON.stringify({ blockIndex: idx, enabled })
+          });
+          if (res.ok) {
+            const data = await res.json();
+            adminDisabledBlocks = data.settings.disabledBlocks || [];
+            renderAdminPanel();
+          }
+        } catch (err) {}
+      });
+    });
+
+    // セーフティトグル
+    const safetyToggle = document.getElementById('safetyToggle');
+    if (safetyToggle) {
+      safetyToggle.addEventListener('click', async function() {
+        const newMode = !adminSafetyMode;
+        try {
+          const res = await fetch(`${API_BASE_URL}/api/admin/safety-toggle`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${authToken}` },
+            body: JSON.stringify({ safetyMode: newMode })
+          });
+          if (res.ok) {
+            adminSafetyMode = newMode;
+            renderAdminPanel();
+          }
+        } catch (err) {}
+      });
+    }
+  }
+
+  adminPanelBtn.addEventListener('click', () => {
+    if (currentUserId === 'admin') {
+      renderAdminPanel();
+      modalOverlay.classList.add('show');
+    }
+  });
 
   function renderAuthModal(){
     modalContent.dataset.mode = 'auth';
@@ -1208,7 +1507,7 @@
     }catch(err){ console.warn('サーバーからの取得に失敗しました:', err.message); }
   }
 
-  // ===================== ⭐ ランキング機能 =====================
+  // ===================== ランキング機能 =====================
   async function renderRankingModal() {
     modalContent.dataset.mode = 'ranking';
     modalContent.innerHTML = `
@@ -1239,7 +1538,6 @@
       }
       html += `</div>`;
 
-      // 自分の順位（下部固定）
       if (authToken && currentUserId) {
         let myScore = 0;
         try {
