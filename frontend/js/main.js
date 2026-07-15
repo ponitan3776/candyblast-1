@@ -1,5 +1,31 @@
 // ===================== メイン（起動時に実行） =====================
 (function() {
+  // ===================== DOM要素をセット =====================
+  G.boardEl = document.getElementById('board');
+  G.trayEl = document.getElementById('tray');
+  G.ghostEl = document.getElementById('ghost');
+  G.scoreValEl = document.getElementById('scoreVal');
+  G.bestValEl = document.getElementById('bestVal');
+  G.coinValEl = document.getElementById('coinVal');
+  G.comboTextEl = document.getElementById('comboText');
+  G.overlayEl = document.getElementById('overlay');
+  G.finalScoreEl = document.getElementById('finalScore');
+  G.newBestNoteEl = document.getElementById('newBestNote');
+  G.coinEarnedNoteEl = document.getElementById('coinEarnedNote');
+  G.restartBtn = document.getElementById('restartBtn');
+  G.soundBtn = document.getElementById('soundBtn');
+  G.questBtn = document.getElementById('questBtn');
+  G.settingsBtn = document.getElementById('settingsBtn');
+  G.modeBadgeEl = document.getElementById('modeBadge');
+  G.accountBtn = document.getElementById('accountBtn');
+  G.rankingBtn = document.getElementById('rankingBtn');
+  G.adminPanelBtn = document.getElementById('adminPanelBtn');
+  G.chatBtn = document.getElementById('chatBtn');
+  G.modalOverlay = document.getElementById('modalOverlay');
+  G.modalContent = document.getElementById('modalContent');
+  G.modalClose = document.getElementById('modalClose');
+
+  // ===================== イベントリスナー =====================
   // ズーム無効化
   document.addEventListener('gesturestart', function(e) { e.preventDefault(); });
   document.addEventListener('gesturechange', function(e) { e.preventDefault(); });
@@ -14,70 +40,72 @@
   });
 
   // サウンドボタン
-  soundBtn.addEventListener('click', () => {
+  G.soundBtn.addEventListener('click', () => {
     unlockAudio();
-    soundOn = !soundOn;
-    soundBtn.textContent = soundOn ? '🔊' : '🔇';
+    G.soundOn = !G.soundOn;
+    G.soundBtn.textContent = G.soundOn ? '🔊' : '🔇';
   });
 
   // クエストボタン
-  questBtn.addEventListener('click', () => {
+  G.questBtn.addEventListener('click', () => {
     renderQuestModal();
-    modalOverlay.classList.add('show');
+    G.modalOverlay.classList.add('show');
   });
 
   // 設定ボタン
-  settingsBtn.addEventListener('click', () => {
-    pendingMode = currentMode;
-    pendingSize = SIZE;
+  G.settingsBtn.addEventListener('click', () => {
+    G.pendingMode = G.currentMode;
+    G.pendingSize = G.SIZE;
     renderSettingsModal('mode');
-    modalOverlay.classList.add('show');
+    G.modalOverlay.classList.add('show');
   });
 
   // アカウントボタン
-  accountBtn.addEventListener('click', () => {
+  G.accountBtn.addEventListener('click', () => {
     renderAuthModal();
-    modalOverlay.classList.add('show');
+    G.modalOverlay.classList.add('show');
   });
 
   // ランキングボタン
-  rankingBtn.addEventListener('click', () => {
+  G.rankingBtn.addEventListener('click', () => {
     renderRankingModal();
-    modalOverlay.classList.add('show');
+    G.modalOverlay.classList.add('show');
   });
 
   // チャットボタン
-  chatBtn.addEventListener('click', () => {
+  G.chatBtn.addEventListener('click', () => {
     renderChatModal();
     const observer = new MutationObserver(() => {
-      if (!modalOverlay.classList.contains('show')) {
-        if (chatPollingInterval) {
-          clearInterval(chatPollingInterval);
-          chatPollingInterval = null;
+      if (!G.modalOverlay.classList.contains('show')) {
+        if (G.chatPollingInterval) {
+          clearInterval(G.chatPollingInterval);
+          G.chatPollingInterval = null;
         }
       }
     });
-    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
+    observer.observe(G.modalOverlay, { attributes: true, attributeFilter: ['class'] });
   });
 
   // 管理者ボタン
-  adminPanelBtn.addEventListener('click', () => {
-    if (currentUserId === 'admin') {
+  G.adminPanelBtn.addEventListener('click', () => {
+    if (G.currentUserId === 'admin') {
       renderAdminPanel();
-      modalOverlay.classList.add('show');
+      G.modalOverlay.classList.add('show');
     }
   });
 
   // モーダル閉じる
-  modalClose.addEventListener('click', closeModal);
-  modalOverlay.addEventListener('click', (e) => { if (e.target === modalOverlay) closeModal(); });
+  G.modalClose.addEventListener('click', closeModal);
+  G.modalOverlay.addEventListener('click', (e) => {
+    if (e.target === G.modalOverlay) closeModal();
+  });
 
   // リスタートボタン
-  restartBtn.addEventListener('click', () => {
-    overlayEl.classList.remove('show');
-    score = 0;
-    streak = 0;
-    noClearStreak = 0;
+  G.restartBtn.addEventListener('click', () => {
+    G.overlayEl.classList.remove('show');
+    G.score = 0;
+    G.streak = 0;
+    G.noClearStreak = 0;
     updateScoreUI();
     initBoard();
     fillTray();
@@ -98,10 +126,10 @@
     initBoard();
     fillTray();
     if (isFirstTime) {
-      pendingMode = currentMode;
-      pendingSize = SIZE;
+      G.pendingMode = G.currentMode;
+      G.pendingSize = G.SIZE;
       renderSettingsModal('mode');
-      modalOverlay.classList.add('show');
+      G.modalOverlay.classList.add('show');
     }
   })();
 
