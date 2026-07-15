@@ -9,7 +9,7 @@ function unlockAudio() {
 }
 
 function playSound(type) {
-  if (!soundOn) return;
+  if (!G.soundOn) return;
   try {
     unlockAudio();
     if (!audioCtx) return;
