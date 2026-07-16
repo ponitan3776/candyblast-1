@@ -472,7 +472,11 @@
   let playTime = 0;
   let playTimeInterval = null;
 
+  // モード別ベストスコア
+  let bestScores = { soft:0, baked:0, hard:0, extreme:0 };
+
   const STORAGE_BEST = 'candyblast-highscore';
+  const STORAGE_BEST_SCORES = 'candyblast-bestScores-v1';
   const STORAGE_COINS = 'candyblast-coins';
   const STORAGE_QUESTS = 'candyblast-quests-v1';
   const STORAGE_SETTINGS = 'candyblast-settings-v1';
@@ -495,8 +499,7 @@
     playtime: '⏱️ プレイ時間'
   };
   let currentRankingType = 'score';
-
-  let rankingPollingInterval = null;
+  let rankingPollInterval = null;
 
   function boardIndex(r,c){ return r*SIZE+c; }
   function todayKey(){ return new Date().toISOString().slice(0,10); }
@@ -516,26 +519,6 @@
       headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
       body: JSON.stringify({ playTime })
     }).catch(() => {});
-  }
-
-  // ===================== ゲームデータリセット関数 =====================
-  function resetGameData() {
-    score = 0;
-    best = 0;
-    coins = 0;
-    streak = 0;
-    noClearStreak = 0;
-    ownedSkins = ['default'];
-    equippedSkin = 'default';
-    quests = [];
-    dailyStats = { date: todayKey(), ...DAILY_STATS_DEFAULT };
-    playTime = 0;
-    stopPlayTimeTracking();
-    updateScoreUI();
-    updateCoinUI();
-    bestValEl.textContent = '0';
-    initBoard();
-    fillTray();
   }
 
   // ===================== ボード初期化 =====================
@@ -910,29 +893,45 @@
     setTimeout(()=>el.remove(),950);
   }
 
-  // ===================== スコア追加（リアルタイム同期対応） =====================
+  // ===================== スコア周り（リアルタイム同期対応） =====================
+  let lastSyncTime = 0;
+  function syncBestScore() {
+    if (!authToken) return;
+    // 現在のモードのベストを更新
+    const currentBest = bestScores[currentMode] || 0;
+    if (score > currentBest) {
+      bestScores[currentMode] = score;
+      // 全体ベストも更新（表示用）
+      best = Math.max(best, score);
+      bestValEl.textContent = best;
+      saveBestScores();
+      // サーバーへ送信（スロットリング: 2秒に1回まで）
+      const now = Date.now();
+      if (now - lastSyncTime > 2000) {
+        lastSyncTime = now;
+        syncToServer();
+      }
+    }
+  }
+
   function addScore(amount){
     score += amount;
     dailyStats.scoreEarned += amount;
     dailyStats.bestSingleGameScore = Math.max(dailyStats.bestSingleGameScore||0, score);
     updateScoreUI();
-    if (authToken && SIZE === 8) {
-      syncScoreToServer();
-    }
-  }
-
-  function syncScoreToServer() {
-    if (!authToken) return;
-    fetch(`${API_BASE_URL}/api/sync`, {
-      method: 'POST',
-      headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
-      body: JSON.stringify({ bestScore: best, mode: currentMode, size: SIZE })
-    }).catch(err => console.warn('スコア同期失敗:', err));
+    // リアルタイムでベストスコアを同期（必要に応じて）
+    syncBestScore();
   }
 
   function updateScoreUI(){
     scoreValEl.textContent = score;
-    if(score>best){ best=score; bestValEl.textContent=best; saveBest(best); }
+    // bestはbestScoresから最大値を更新（表示用）
+    const maxBest = Math.max(bestScores.soft, bestScores.baked, bestScores.hard, bestScores.extreme);
+    if (maxBest > best) {
+      best = maxBest;
+      saveBestScores();
+    }
+    bestValEl.textContent = best;
   }
   function updateCoinUI(){ coinValEl.textContent = coins; saveCoins(coins); }
 
@@ -941,6 +940,36 @@
     if(earned>0){ coins += earned; updateCoinUI(); floatCoin(earned); }
     return earned;
   }
+
+  // ===================== ベストスコア永続化 =====================
+  async function loadBestScores(){
+    try{
+      const res = await window.storage.get(STORAGE_BEST_SCORES, false);
+      if(res && res.value){
+        const parsed = JSON.parse(res.value);
+        if(parsed.soft !== undefined) bestScores = parsed;
+      }
+    }catch(err){}
+    // 全体ベストは最大値
+    best = Math.max(bestScores.soft, bestScores.baked, bestScores.hard, bestScores.extreme);
+    bestValEl.textContent = best;
+  }
+  async function saveBestScores(){
+    try{ await window.storage.set(STORAGE_BEST_SCORES, JSON.stringify(bestScores), false); }catch(err){}
+    // 全体ベストも保存（互換性のため）
+    const overall = Math.max(bestScores.soft, bestScores.baked, bestScores.hard, bestScores.extreme);
+    await saveBest(overall);
+  }
+  async function loadBest(){
+    try{ const res = await window.storage.get(STORAGE_BEST, false); if(res && res.value) best = parseInt(res.value,10)||0; }catch(err){ best=0; }
+    bestValEl.textContent = best;
+  }
+  async function saveBest(val){ try{ await window.storage.set(STORAGE_BEST, String(val), false); }catch(err){} }
+  async function loadCoins(){
+    try{ const res = await window.storage.get(STORAGE_COINS, false); if(res && res.value) coins = parseInt(res.value,10)||0; }catch(err){ coins=0; }
+    coinValEl.textContent = coins;
+  }
+  async function saveCoins(val){ try{ await window.storage.set(STORAGE_COINS, String(val), false); }catch(err){} }
 
   // ===================== クエスト =====================
   const QUEST_POOL = [
@@ -969,47 +998,29 @@
 
   async function loadDailyQuests(){
     const today = todayKey();
-    const questDefs = QUEST_POOL;
-    const progress = await loadQuestProgress();
-    quests = questDefs.map(q => ({
-      ...q,
-      progress: progress[q.id]?.progress || 0,
-      claimed: progress[q.id]?.claimed || false
-    }));
-    try {
+    try{
       const res = await window.storage.get(STORAGE_QUESTS, false);
-      if (res && res.value) {
+      if(res && res.value){
         const parsed = JSON.parse(res.value);
-        if (parsed.date === today) {
+        if(parsed.date === today){
           dailyStats = { ...DAILY_STATS_DEFAULT, ...parsed.stats, date:today };
+          quests = parsed.quests;
+          return;
         }
       }
-    } catch(e) {}
-    if (!dailyStats.date || dailyStats.date !== today) {
-      dailyStats = { date:today, ...DAILY_STATS_DEFAULT };
-    }
-    quests.forEach(q => {
-      const val = dailyStats[q.statKey] || 0;
-      if (val > q.progress) {
-        q.progress = val;
-        saveQuestProgress(q.id, val, q.claimed);
-      }
-    });
+    }catch(err){}
+    dailyStats = { date:today, ...DAILY_STATS_DEFAULT };
+    quests = pickDailyQuests();
+    await saveDailyQuests();
   }
 
   async function saveDailyQuests(){
     dailyStats.date = todayKey();
-    try{ await window.storage.set(STORAGE_QUESTS, JSON.stringify({date:dailyStats.date, stats:dailyStats, quests}), false); }catch(e){}
+    try{ await window.storage.set(STORAGE_QUESTS, JSON.stringify({date:dailyStats.date, stats:dailyStats, quests}), false); }catch(err){}
   }
 
   function updateQuestProgress(){
-    quests.forEach(q => {
-      const val = dailyStats[q.statKey] || 0;
-      if (val > q.progress) {
-        q.progress = val;
-        saveQuestProgress(q.id, val, q.claimed);
-      }
-    });
+    quests.forEach(q=>{ q.progress = dailyStats[q.statKey] || 0; });
     saveDailyQuests();
     if(modalOverlay.classList.contains('show') && modalContent.dataset.mode==='quests') renderQuestModal();
   }
@@ -1021,7 +1032,6 @@
     coins += q.reward;
     updateCoinUI();
     saveDailyQuests();
-    saveQuestProgress(q.id, q.progress, true);
     renderQuestModal();
     syncToServer();
   }
@@ -1029,20 +1039,15 @@
   function renderQuestModal(){
     modalContent.dataset.mode = 'quests';
     let html = `<h2 style="color:var(--mint);">📋 デイリークエスト</h2><div class="sub">毎日リセットされます。がんばって集めよう！</div>`;
-    if (!quests || quests.length === 0) {
-      html += `<div class="sub">🔄 クエスト情報を読み込み中...</div>`;
-      modalContent.innerHTML = html;
-      return;
-    }
-    quests.forEach(q => {
-      const pct = Math.min(100, Math.floor((q.progress / q.target) * 100));
+    quests.forEach(q=>{
+      const pct = Math.min(100, Math.floor((q.progress/q.target)*100));
       const done = q.progress >= q.target;
       html += `
         <div class="quest-item">
           <div class="qtitle">${q.desc}</div>
           <div class="quest-bar-bg"><div class="quest-bar-fill" style="width:${pct}%"></div></div>
           <div class="quest-foot">
-            <span>${Math.min(q.progress, q.target)} / ${q.target}</span>
+            <span>${Math.min(q.progress,q.target)} / ${q.target}</span>
             <button class="claim-btn" data-qid="${q.id}" ${(!done||q.claimed)?'disabled':''}>
               ${q.claimed ? '受取済み' : `🪙${q.reward} 受け取る`}
             </button>
@@ -1103,7 +1108,7 @@
   }
 
   async function saveSkinsData(){
-    try{ await window.storage.set(STORAGE_SKINS, JSON.stringify({owned:ownedSkins, equipped:equippedSkin}), false); }catch(e){}
+    try{ await window.storage.set(STORAGE_SKINS, JSON.stringify({owned:ownedSkins, equipped:equippedSkin}), false); }catch(err){}
   }
 
   // ===================== 設定 =====================
@@ -1121,7 +1126,7 @@
     return isFirstTime;
   }
   async function saveSettings(){
-    try{ await window.storage.set(STORAGE_SETTINGS, JSON.stringify({mode:currentMode, size:SIZE}), false); }catch(e){}
+    try{ await window.storage.set(STORAGE_SETTINGS, JSON.stringify({mode:currentMode, size:SIZE}), false); }catch(err){}
   }
 
   function renderModeTab(){
@@ -1219,25 +1224,13 @@
     modalOverlay.classList.add('show');
   });
 
-  // ===================== 永続化 =====================
-  async function loadBest(){
-    try{ const res = await window.storage.get(STORAGE_BEST, false); if(res && res.value) best = parseInt(res.value,10)||0; }catch(err){ best=0; }
-    bestValEl.textContent = best;
-  }
-  async function saveBest(val){ try{ await window.storage.set(STORAGE_BEST, String(val), false); }catch(e){} }
-  async function loadCoins(){
-    try{ const res = await window.storage.get(STORAGE_COINS, false); if(res && res.value) coins = parseInt(res.value,10)||0; }catch(err){ coins=0; }
-    coinValEl.textContent = coins;
-  }
-  async function saveCoins(val){ try{ await window.storage.set(STORAGE_COINS, String(val), false); }catch(e){} }
-
   // ===================== サウンド =====================
   let audioCtx = null;
   function unlockAudio(){
     try{
       if(!audioCtx) audioCtx = new (window.AudioContext||window.webkitAudioContext)();
       if(audioCtx.state === 'suspended') audioCtx.resume();
-    }catch(e){}
+    }catch(err){}
   }
   function playSound(type){
     if(!soundOn) return;
@@ -1265,7 +1258,7 @@
         g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime+0.18);
         o.start(); o.stop(audioCtx.currentTime+0.18);
       }
-    }catch(e){}
+    }catch(err){}
   }
   soundBtn.addEventListener('click', ()=>{
     unlockAudio();
@@ -1286,7 +1279,8 @@
     newBestNoteEl.textContent = (score>=best && score>0) ? '🎉 ハイスコア更新！' : 'お疲れさまでした！';
     coinEarnedNoteEl.textContent = earned>0 ? `🪙 +${earned} コイン獲得！` : '';
     overlayEl.classList.add('show');
-    if (SIZE === 8) syncToServer();
+    // ゲーム終了時にサーバーへ送信（既にリアルタイムで送っているが、念のため）
+    if (authToken) syncToServer();
     syncPlayTime();
   }
   restartBtn.addEventListener('click', ()=>{
@@ -1305,9 +1299,9 @@
       clearInterval(chatPollingInterval);
       chatPollingInterval = null;
     }
-    if (rankingPollingInterval) {
-      clearInterval(rankingPollingInterval);
-      rankingPollingInterval = null;
+    if (rankingPollInterval) {
+      clearInterval(rankingPollInterval);
+      rankingPollInterval = null;
     }
   }
   modalClose.addEventListener('click', closeModal);
@@ -1318,7 +1312,49 @@
     modalOverlay.classList.add('show');
   });
 
-  // ===================== アカウント（修正済み） =====================
+  // ===================== アカウント（修正：ログアウト時に完全リセット） =====================
+  function resetToGuest() {
+    // ゲスト状態にリセット
+    authToken = null;
+    currentUserId = null;
+    // データ初期化
+    bestScores = { soft:0, baked:0, hard:0, extreme:0 };
+    best = 0;
+    coins = 0;
+    ownedSkins = ['default'];
+    equippedSkin = 'default';
+    // クエストもリセット（新たな日付で再生成）
+    dailyStats = { date: todayKey(), ...DAILY_STATS_DEFAULT };
+    quests = pickDailyQuests();
+    // プレイ時間リセット
+    stopPlayTimeTracking();
+    playTime = 0;
+    // UI更新
+    bestValEl.textContent = '0';
+    coinValEl.textContent = '0';
+    score = 0; streak = 0; noClearStreak = 0;
+    updateScoreUI();
+    // スキン適用
+    applySkin('default');
+    // 盤面を新しくする
+    initBoard();
+    fillTray();
+    // 保存（ゲスト用）
+    saveBestScores();
+    saveCoins(0);
+    saveSkinsData();
+    saveDailyQuests();
+    // アカウントボタン更新
+    updateAccountButton();
+    // 管理者パネル非表示
+    adminPanelBtn.style.display = 'none';
+    // ランキングポーリング停止
+    if (rankingPollInterval) {
+      clearInterval(rankingPollInterval);
+      rankingPollInterval = null;
+    }
+  }
+
   function updateAccountButton(){
     accountBtn.textContent = currentUserId ? '👤' : '👤';
     accountBtn.title = currentUserId ? `ログイン中: ${currentUserId}` : '未ログイン';
@@ -1341,12 +1377,7 @@
       });
       if (!res.ok) throw new Error('削除に失敗しました');
       alert('アカウントを削除しました。');
-      authToken = null;
-      currentUserId = null;
-      resetGameData();
-      localStorage.removeItem('candyblast_token');
-      localStorage.removeItem('candyblast_user');
-      updateAccountButton();
+      resetToGuest();
       renderAuthModal();
     } catch(err) {
       alert(err.message);
@@ -1365,13 +1396,7 @@
         <button class="ghost-btn" id="deleteAccountBtn" style="color:var(--coral);border-color:var(--coral);">🗑️ アカウント削除</button>
       `;
       document.getElementById('logoutBtn').addEventListener('click', ()=>{
-        authToken = null;
-        currentUserId = null;
-        resetGameData();
-        localStorage.removeItem('candyblast_token');
-        localStorage.removeItem('candyblast_user');
-        updateAccountButton();
-        renderAuthModal();
+        resetToGuest();  // 完全リセット
         closeModal();
       });
       document.getElementById('syncNowBtn').addEventListener('click', async ()=>{
@@ -1428,14 +1453,19 @@
         if(!r.ok) throw new Error(data.error || 'ログインに失敗しました。');
         authToken = data.token;
         currentUserId = data.id;
-        resetGameData();
+        // ログイン後、サーバーからデータ取得
         await syncFromServer();
-        startPlayTimeTracking();
-        localStorage.setItem('candyblast_token', authToken);
-        localStorage.setItem('candyblast_user', currentUserId);
-        msgEl.textContent = 'ログインしました！'; msgEl.className='auth-msg ok';
+        // ローカルに反映（syncFromServerでbestScores, coins, skinsなどが更新される）
         updateAccountButton();
-        setTimeout(renderAuthModal, 500);
+        // プレイ時間追跡開始
+        startPlayTimeTracking();
+        msgEl.textContent = 'ログインしました！'; msgEl.className='auth-msg ok';
+        // UI更新
+        updateScoreUI();
+        updateCoinUI();
+        applySkin(equippedSkin);
+        // モーダル閉じる
+        setTimeout(()=>{ closeModal(); }, 500);
       }catch(err){
         msgEl.textContent = err.message + '(サーバーに接続できているか確認してください)';
         msgEl.className='auth-msg error';
@@ -1452,15 +1482,28 @@
         const data = await r.json();
         if(!r.ok) throw new Error(data.error || '登録に失敗しました。');
         authToken = data.token; currentUserId = data.id;
-        resetGameData();
-        await syncFromServer();
+        // 新規登録時はデフォルトデータ
+        bestScores = { soft:0, baked:0, hard:0, extreme:0 };
+        coins = 0;
+        ownedSkins = ['default'];
+        equippedSkin = 'default';
+        playTime = 0;
+        saveBestScores();
+        saveCoins(0);
+        saveSkinsData();
+        // クエストは新しく生成
+        dailyStats = { date: todayKey(), ...DAILY_STATS_DEFAULT };
+        quests = pickDailyQuests();
+        saveDailyQuests();
+        updateScoreUI();
+        updateCoinUI();
+        applySkin('default');
         startPlayTimeTracking();
-        localStorage.setItem('candyblast_token', authToken);
-        localStorage.setItem('candyblast_user', currentUserId);
+        updateAccountButton();
         msgEl.textContent = '登録が完了しました！復元コードは管理者のDiscordに通知されました。';
         msgEl.className='auth-msg ok';
-        updateAccountButton();
-        setTimeout(renderAuthModal, 800);
+        await syncToServer();
+        setTimeout(()=>{ closeModal(); }, 800);
       }catch(err){
         msgEl.textContent = err.message;
         msgEl.className='auth-msg error';
@@ -1488,7 +1531,7 @@
 
   accountBtn.addEventListener('click', ()=>{ renderAuthModal(); modalOverlay.classList.add('show'); });
 
-  // ===================== サーバー同期（上書きモード） =====================
+  // ===================== サーバー同期（修正：ベストスコアをモード別に送信） =====================
   async function syncToServer(){
     if(!authToken) return;
     try{
@@ -1496,7 +1539,7 @@
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
         body: JSON.stringify({
-          bestScore: best,
+          bestScore: bestScores[currentMode] || 0,  // 現在のモードのベストを送信
           coins,
           skins: ownedSkins,
           equippedSkin,
@@ -1515,23 +1558,42 @@
       const r = await fetch(`${API_BASE_URL}/api/sync`, { headers:{ 'Authorization':`Bearer ${authToken}` } });
       if(!r.ok) return;
       const data = await r.json();
-      best = data.bestScore || 0;
+      // ベストスコア（モード別がある場合はそちらを優先）
+      if (data.bestScores && typeof data.bestScores === 'object') {
+        bestScores = { ...bestScores, ...data.bestScores };
+      } else if (data.bestScore !== undefined) {
+        // 互換性: 全体ベストのみの場合、現在のモードに設定（他のモードはそのまま）
+        bestScores[currentMode] = Math.max(bestScores[currentMode] || 0, data.bestScore);
+      }
+      best = Math.max(bestScores.soft, bestScores.baked, bestScores.hard, bestScores.extreme);
       bestValEl.textContent = best;
-      coins = data.coins || 0;
-      coinValEl.textContent = coins;
-      if (data.skins) ownedSkins = data.skins;
+      saveBestScores();
+
+      if (data.coins !== undefined) {
+        coins = data.coins;
+        coinValEl.textContent = coins;
+        saveCoins(coins);
+      }
+      if (data.skins) {
+        ownedSkins = data.skins;
+        saveSkinsData();
+      }
       if (data.equippedSkin) {
         equippedSkin = data.equippedSkin;
         applySkin(equippedSkin);
+        saveSkinsData();
       }
-      if (data.playTime !== undefined) playTime = data.playTime;
-      saveBest(best);
-      saveCoins(coins);
-      saveSkinsData();
-      await loadDailyQuests();
-      updateModeBadge();
-      initBoard();
-      fillTray();
+      if (data.playTime !== undefined) {
+        playTime = data.playTime;
+      }
+      // クエストはサーバーからもらったものがあれば反映（ただし日付が一致しているか確認）
+      if (data.quests && data.quests.length) {
+        // サーバーにクエストがある場合は上書き（日付も合わせる）
+        // ここでは単純に置き換える（必要に応じて日付チェック）
+        quests = data.quests;
+        dailyStats = data.dailyStats || dailyStats;
+        saveDailyQuests();
+      }
     }catch(err){ console.warn('サーバーからの取得に失敗しました:', err.message); }
   }
 
@@ -1550,7 +1612,6 @@
     } catch(e) {}
   }
 
-  // ===================== 管理者コマンド =====================
   async function executeAdminCommand(cmd) {
     if (!authToken || currentUserId !== 'admin') return '❌ 管理者権限がありません';
     try {
@@ -1564,12 +1625,19 @@
       if (cmd.startsWith('/setcoins')) {
         const parts = cmd.split(' ');
         const newCoins = parseInt(parts[1]);
-        if (!isNaN(newCoins) && newCoins >= 0) { coins = newCoins; updateCoinUI(); }
+        if (!isNaN(newCoins) && newCoins >= 0) { coins = newCoins; updateCoinUI(); saveCoins(coins); syncToServer(); }
       }
       if (cmd.startsWith('/setscore')) {
         const parts = cmd.split(' ');
-        const score = parseInt(parts[2]);
-        if (!isNaN(score) && score >= 0) { best = score; bestValEl.textContent = best; saveBest(best); }
+        const mode = parts[1];
+        const scoreVal = parseInt(parts[2]);
+        if (RANKING_MODES.includes(mode) && !isNaN(scoreVal) && scoreVal >= 0) {
+          bestScores[mode] = scoreVal;
+          best = Math.max(bestScores.soft, bestScores.baked, bestScores.hard, bestScores.extreme);
+          bestValEl.textContent = best;
+          saveBestScores();
+          syncToServer();
+        }
       }
       return data.result || '✅ コマンドを実行しました';
     } catch(e) {
@@ -1577,7 +1645,6 @@
     }
   }
 
-  // ===================== 管理者パネル =====================
   async function renderAdminPanel() {
     modalContent.dataset.mode = 'admin';
     let html = `
@@ -1670,7 +1737,7 @@
     }
   });
 
-  // ===================== ランキング（リアルタイムポーリング対応） =====================
+  // ===================== ランキング（リアルタイム自動更新） =====================
   async function renderRankingModal() {
     modalContent.dataset.mode = 'ranking';
     let html = `
@@ -1689,6 +1756,7 @@
       <div id="rankingContent">
         <div class="sub">🔄 読み込み中...</div>
       </div>
+      <div style="margin-top:8px; font-size:12px; color:var(--text-dim);">自動更新（5秒ごと）</div>
     `;
     modalContent.innerHTML = html;
 
@@ -1705,7 +1773,8 @@
       });
     });
 
-    async function fetchAndRenderRanking() {
+    // 読み込み関数
+    async function loadRanking() {
       try {
         const res = await fetch(`${API_BASE_URL}/api/ranking?mode=${currentRankingMode}&type=${currentRankingType}`);
         const data = await res.json();
@@ -1744,8 +1813,8 @@
             } else if (currentRankingType === 'playtime') {
               myValue = syncData.playTime || 0;
             } else {
-              const bestScores = syncData.bestScores || {};
-              myValue = bestScores[currentRankingMode] || 0;
+              const bestScoresServer = syncData.bestScores || {};
+              myValue = bestScoresServer[currentRankingMode] || 0;
             }
           } catch(e) {}
 
@@ -1789,10 +1858,11 @@
       }
     }
 
-    await fetchAndRenderRanking();
+    await loadRanking();
 
-    if (rankingPollingInterval) clearInterval(rankingPollingInterval);
-    rankingPollingInterval = setInterval(fetchAndRenderRanking, 3000);
+    // ポーリング開始（既存のものをクリア）
+    if (rankingPollInterval) clearInterval(rankingPollInterval);
+    rankingPollInterval = setInterval(loadRanking, 5000);
   }
 
   rankingBtn.addEventListener('click', () => {
@@ -1800,7 +1870,7 @@
     modalOverlay.classList.add('show');
   });
 
-  // ===================== チャット＆プロフィール機能 =====================
+  // ===================== チャット =====================
   let chatMessages = [];
   let chatPollingInterval = null;
 
@@ -1940,6 +2010,7 @@
 
   chatBtn.addEventListener('click', () => {
     renderChatModal();
+    // モーダルが閉じられたらポーリング停止
     const observer = new MutationObserver(() => {
       if (!modalOverlay.classList.contains('show')) {
         if (chatPollingInterval) {
@@ -1951,60 +2022,23 @@
     observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
   });
 
-  // ===================== 自動ログイン復元 =====================
-  async function tryAutoLogin() {
-    const savedToken = localStorage.getItem('candyblast_token');
-    const savedUser = localStorage.getItem('candyblast_user');
-    if (!savedToken || !savedUser) return false;
-    authToken = savedToken;
-    currentUserId = savedUser;
-    try {
-      resetGameData();
-      await syncFromServer();
-      updateAccountButton();
-      if (currentUserId) {
-        startPlayTimeTracking();
-        if (modalOverlay.classList.contains('show') && modalContent.dataset.mode === 'auth') {
-          renderAuthModal();
-        }
-      }
-      console.log('✅ 自動ログイン成功:', currentUserId);
-      return true;
-    } catch (e) {
-      console.warn('⚠️ 自動ログイン失敗（トークン無効）:', e);
-      localStorage.removeItem('candyblast_token');
-      localStorage.removeItem('candyblast_user');
-      authToken = null;
-      currentUserId = null;
-      resetGameData();
-      return false;
-    }
-  }
-
   // ===================== 初期化 =====================
   (async function start(){
-    const autoLoggedIn = await tryAutoLogin();
-
-    if (!autoLoggedIn) {
-      await loadBest();
-      await loadCoins();
-      await loadSkinsData();
-      const isFirstTime = await loadSettings();
-      await loadDailyQuests();
-      updateAccountButton();
-    }
-
+    await loadBest();
+    await loadBestScores();  // モード別ベスト読み込み
+    await loadCoins();
+    await loadSkinsData();
+    const isFirstTime = await loadSettings();
+    await loadDailyQuests();
+    updateAccountButton();
     updateModeBadge();
     initBoard();
     fillTray();
-
-    if (!autoLoggedIn) {
-      const isFirstTime = await loadSettings();
-      if (isFirstTime) {
-        pendingMode = currentMode; pendingSize = SIZE;
-        renderSettingsModal('mode');
-        modalOverlay.classList.add('show');
-      }
+    // ゲスト状態でプレイ時間は開始しない（ログイン時に開始）
+    if(isFirstTime){
+      pendingMode = currentMode; pendingSize = SIZE;
+      renderSettingsModal('mode');
+      modalOverlay.classList.add('show');
     }
   })();
 
