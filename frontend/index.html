@@ -94,6 +94,7 @@
     70%{ opacity:1; transform:translate(-50%,-60%) scale(1.0) rotate(0deg); }
     100%{ opacity:0; transform:translate(-50%,-90%) scale(0.9) rotate(0deg); } }
   .combo-text.show{ animation:comboPop 0.9s ease-out forwards; }
+  .combo-text.bonus{ animation:comboPop 0.9s ease-out forwards; color:var(--mint); }
 
   .coin-float{ position:fixed; font-family:'Baloo 2',sans-serif; font-weight:700; color:var(--gold); font-size:18px;
     z-index:40; pointer-events:none; text-shadow:0 2px 4px rgba(0,0,0,0.4); }
@@ -257,6 +258,8 @@
       <div class="icon-btn" id="accountBtn">👤</div>
       <div class="icon-btn" id="rankingBtn" title="ランキング">🏆</div>
       <div class="icon-btn" id="adminPanelBtn" title="管理者パネル" style="display:none;">🔧</div>
+      <!-- 🆕 チャットボタン -->
+      <div class="icon-btn" id="chatBtn" title="チャット">💬</div>
     </div>
   </header>
 
@@ -446,6 +449,7 @@
   const accountBtn = document.getElementById('accountBtn');
   const rankingBtn = document.getElementById('rankingBtn');
   const adminPanelBtn = document.getElementById('adminPanelBtn');
+  const chatBtn = document.getElementById('chatBtn');
   const modalOverlay = document.getElementById('modalOverlay');
   const modalContent = document.getElementById('modalContent');
   const modalClose = document.getElementById('modalClose');
@@ -466,6 +470,8 @@
   let pendingMode = currentMode, pendingSize = SIZE;
   let authToken = null;
   let currentUserId = null;
+  let playTime = 0;
+  let playTimeInterval = null;
 
   const STORAGE_BEST = 'candyblast-highscore';
   const STORAGE_COINS = 'candyblast-coins';
@@ -473,18 +479,43 @@
   const STORAGE_SETTINGS = 'candyblast-settings-v1';
   const STORAGE_SKINS = 'candyblast-skins-v1';
 
-  // ===================== ランキング用（柔らかいを一番右に） =====================
-  const RANKING_MODES = ['baked', 'hard', 'extreme', 'soft'];
+  // ===================== ランキング用 =====================
+  const RANKING_MODES = ['soft', 'baked', 'hard', 'extreme'];
   const RANKING_MODE_LABELS = {
+    soft: '🍮 柔らかい',
     baked: '🍪 焼成',
     hard: '🍬 硬い',
-    extreme: '🧊 激硬',
-    soft: '🍮 柔らかい'
+    extreme: '🧊 激硬'
   };
-  let currentRankingMode = 'baked';
+  let currentRankingMode = 'soft';
+
+  const RANKING_TYPES = ['score', 'coins', 'playtime'];
+  const RANKING_TYPE_LABELS = {
+    score: '🏆 スコア',
+    coins: '🪙 コイン',
+    playtime: '⏱️ プレイ時間'
+  };
+  let currentRankingType = 'score';
 
   function boardIndex(r,c){ return r*SIZE+c; }
   function todayKey(){ return new Date().toISOString().slice(0,10); }
+
+  // ===================== プレイ時間計測 =====================
+  function startPlayTimeTracking() {
+    if (playTimeInterval) return;
+    playTimeInterval = setInterval(() => { playTime++; }, 1000);
+  }
+  function stopPlayTimeTracking() {
+    if (playTimeInterval) { clearInterval(playTimeInterval); playTimeInterval = null; }
+  }
+  function syncPlayTime() {
+    if (!authToken) return;
+    fetch(`${API_BASE_URL}/api/sync`, {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
+      body: JSON.stringify({ playTime })
+    }).catch(() => {});
+  }
 
   // ===================== ボード初期化 =====================
   function initBoard(){
@@ -615,7 +646,6 @@
     if(bestShape && bestCount > 0) tray[0] = randomShapeColor(bestShape);
   }
 
-  // ===================== fillTray（ブロックオンオフ対応） =====================
   function fillTray(){
     let availableShapes = SHAPES;
     if (currentUserId === 'admin' && adminDisabledBlocks.length > 0) {
@@ -793,6 +823,14 @@
       addScore(lineScore + streakBonus);
       showCombo(linesCleared, streak);
       updateQuestProgress();
+
+      const totalFilled = board.reduce((sum, cell) => sum + (cell.filled ? 1 : 0), 0);
+      if (totalFilled === 0 && linesCleared > 0) {
+        const bonus = linesCleared * 50 + 100;
+        addScore(bonus);
+        showComboText(`✨ 全消しボーナス +${bonus}点!`);
+      }
+
       setTimeout(()=>{
         cellsToClear.forEach(idx=>{ board[idx] = {filled:false, colorIdx:-1}; cellEls[idx].className='cell'; cellEls[idx].style.background=''; });
         if(tray.every(p=>p.used)) fillTray(); else checkGameOver();
@@ -811,7 +849,14 @@
     if(linesCleared>=2) msg = `COMBO x${linesCleared}!`;
     if(streakVal>=2) msg += (msg?'  ':'') + `🔥x${streakVal}`;
     comboTextEl.textContent = msg;
-    comboTextEl.classList.remove('show'); void comboTextEl.offsetWidth; comboTextEl.classList.add('show');
+    comboTextEl.className = 'combo-text show';
+    setTimeout(() => { comboTextEl.className = 'combo-text'; }, 900);
+  }
+
+  function showComboText(msg){
+    comboTextEl.textContent = msg;
+    comboTextEl.className = 'combo-text bonus show';
+    setTimeout(() => { comboTextEl.className = 'combo-text'; }, 900);
   }
 
   function spawnConfetti(cellEl){
@@ -1183,10 +1228,8 @@
     newBestNoteEl.textContent = (score>=best && score>0) ? '🎉 ハイスコア更新！' : 'お疲れさまでした！';
     coinEarnedNoteEl.textContent = earned>0 ? `🪙 +${earned} コイン獲得！` : '';
     overlayEl.classList.add('show');
-    // スコアをサーバーに保存（ランキング用・8x8のみ）
-    if (SIZE === 8) {
-      syncToServer();
-    }
+    if (SIZE === 8) syncToServer();
+    syncPlayTime();
   }
   restartBtn.addEventListener('click', ()=>{
     overlayEl.classList.remove('show');
@@ -1197,7 +1240,14 @@
   });
 
   // ===================== モーダル共通 =====================
-  function closeModal(){ modalOverlay.classList.remove('show'); modalContent.dataset.mode=''; }
+  function closeModal(){
+    modalOverlay.classList.remove('show');
+    modalContent.dataset.mode = '';
+    if (chatPollingInterval) {
+      clearInterval(chatPollingInterval);
+      chatPollingInterval = null;
+    }
+  }
   modalClose.addEventListener('click', closeModal);
   modalOverlay.addEventListener('click', (e)=>{ if(e.target===modalOverlay) closeModal(); });
 
@@ -1206,7 +1256,7 @@
     modalOverlay.classList.add('show');
   });
 
-  // ===================== アカウント（削除機能付き） =====================
+  // ===================== アカウント =====================
   function updateAccountButton(){
     accountBtn.textContent = currentUserId ? '👤' : '👤';
     accountBtn.title = currentUserId ? `ログイン中: ${currentUserId}` : '未ログイン';
@@ -1231,6 +1281,8 @@
       alert('アカウントを削除しました。');
       authToken = null;
       currentUserId = null;
+      best = 0; bestValEl.textContent = '0';
+      coins = 0; coinValEl.textContent = '0';
       updateAccountButton();
       renderAuthModal();
     } catch(err) {
@@ -1250,7 +1302,15 @@
         <button class="ghost-btn" id="deleteAccountBtn" style="color:var(--coral);border-color:var(--coral);">🗑️ アカウント削除</button>
       `;
       document.getElementById('logoutBtn').addEventListener('click', ()=>{
-        authToken=null; currentUserId=null; updateAccountButton(); renderAuthModal();
+        authToken = null;
+        currentUserId = null;
+        best = 0; bestValEl.textContent = '0';
+        coins = 0; coinValEl.textContent = '0';
+        stopPlayTimeTracking();
+        playTime = 0;
+        updateAccountButton();
+        renderAuthModal();
+        closeModal();
       });
       document.getElementById('syncNowBtn').addEventListener('click', async ()=>{
         await syncToServer();
@@ -1304,7 +1364,14 @@
         const r = await fetch(`${API_BASE_URL}/api/login`, { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({id,password}) });
         const data = await r.json();
         if(!r.ok) throw new Error(data.error || 'ログインに失敗しました。');
-        authToken = data.token; currentUserId = data.id;
+        authToken = data.token;
+        currentUserId = data.id;
+        best = data.bestScore || 0;
+        bestValEl.textContent = best;
+        coins = data.coins || 0;
+        coinValEl.textContent = coins;
+        playTime = data.playTime || 0;
+        startPlayTimeTracking();
         msgEl.textContent = 'ログインしました！'; msgEl.className='auth-msg ok';
         await syncFromServer();
         updateAccountButton();
@@ -1325,6 +1392,10 @@
         const data = await r.json();
         if(!r.ok) throw new Error(data.error || '登録に失敗しました。');
         authToken = data.token; currentUserId = data.id;
+        best = 0; bestValEl.textContent = '0';
+        coins = 0; coinValEl.textContent = '0';
+        playTime = 0;
+        startPlayTimeTracking();
         msgEl.textContent = '登録が完了しました！復元コードは管理者のDiscordに通知されました。';
         msgEl.className='auth-msg ok';
         await syncToServer();
@@ -1357,21 +1428,22 @@
 
   accountBtn.addEventListener('click', ()=>{ renderAuthModal(); modalOverlay.classList.add('show'); });
 
-  // ===================== サーバー同期（スキンも保存） =====================
+  // ===================== サーバー同期 =====================
   async function syncToServer(){
     if(!authToken) return;
     try{
       await fetch(`${API_BASE_URL}/api/sync`, {
         method:'POST',
         headers:{ 'Content-Type':'application/json', 'Authorization':`Bearer ${authToken}` },
-        body: JSON.stringify({ 
-          bestScore: best, 
-          coins, 
+        body: JSON.stringify({
+          bestScore: best,
+          coins,
           skins: ownedSkins,
           equippedSkin,
           quests,
           mode: currentMode,
-          size: SIZE
+          size: SIZE,
+          playTime
         })
       });
     }catch(err){ console.warn('サーバー同期に失敗しました:', err.message); }
@@ -1390,6 +1462,7 @@
         equippedSkin = data.equippedSkin;
         applySkin(equippedSkin);
       }
+      if (data.playTime !== undefined) playTime = data.playTime;
       bestValEl.textContent = best; updateCoinUI(); saveBest(best);
     }catch(err){ console.warn('サーバーからの取得に失敗しました:', err.message); }
   }
@@ -1405,12 +1478,8 @@
         const data = await res.json();
         adminDisabledBlocks = data.disabledBlocks || [];
         adminSafetyMode = data.safetyMode || false;
-        // ブロック設定が反映されているか確認
-        console.log('✅ admin設定読み込み完了:', { adminDisabledBlocks, adminSafetyMode });
       }
-    } catch(e) {
-      console.warn('admin設定読み込み失敗:', e);
-    }
+    } catch(e) {}
   }
 
   // ===================== 管理者コマンド =====================
@@ -1424,6 +1493,16 @@
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'コマンド実行に失敗しました');
+      if (cmd.startsWith('/setcoins')) {
+        const parts = cmd.split(' ');
+        const newCoins = parseInt(parts[1]);
+        if (!isNaN(newCoins) && newCoins >= 0) { coins = newCoins; updateCoinUI(); }
+      }
+      if (cmd.startsWith('/setscore')) {
+        const parts = cmd.split(' ');
+        const score = parseInt(parts[2]);
+        if (!isNaN(score) && score >= 0) { best = score; bestValEl.textContent = best; saveBest(best); }
+      }
       return data.result || '✅ コマンドを実行しました';
     } catch(e) {
       return '❌ ' + e.message;
@@ -1436,19 +1515,16 @@
     let html = `
       <h2 style="color:var(--gold);">🔧 管理者パネル</h2>
       <div class="sub">admin専用コマンド実行欄です。</div>
-    `;
-
-    // コマンド入力のみ
-    html += `
       <div class="admin-setting-item">
         <div class="label-row"><span>⌨️ 管理者コマンド</span></div>
         <input type="text" id="adminCmdInput" placeholder="コマンドを入力..." style="width:100%;padding:8px 12px;border-radius:10px;border:1px solid rgba(255,255,255,0.12);background:var(--bg-deep2);color:var(--text);font-size:14px;font-family:'Nunito',sans-serif;margin-bottom:6px;">
         <button class="primary-btn" id="adminCmdBtn">実行</button>
         <div class="cmd-output" id="adminCmdOutput">📋 コマンド一覧:
   /setcoins &lt;amount&gt; - コインを指定値に設定
-  /setscore &lt;mode&gt; &lt;score&gt; - モード別スコア設定 (baked, hard, extreme, soft)
+  /setscore &lt;mode&gt; &lt;score&gt; - モード別スコア設定 (soft, baked, hard, extreme)
   /safety [on|off] - 強制セーフティモード（引数なしで状態表示）
   /resetquests - 全ユーザーのクエスト進捗リセット
+  /setplaytime &lt;seconds&gt; - プレイ時間を設定
   /ban &lt;ID&gt; - ユーザーをBAN
   /unban &lt;ID&gt; - BAN解除
   /resetuser &lt;ID&gt; - ユーザーデータリセット
@@ -1457,10 +1533,6 @@
   /stats - サーバー統計情報
   /help - このヘルプ</div>
       </div>
-    `;
-
-    // ブロック出現設定（ここに残す）
-    html += `
       <div class="admin-setting-item">
         <div class="label-row"><span>🧩 ブロック出現設定（オフにすると出現しなくなります）</span></div>
         <div style="max-height:200px; overflow-y:auto;">
@@ -1489,10 +1561,8 @@
       `;
     });
     html += `</div></div>`;
-
     modalContent.innerHTML = html;
 
-    // コマンド実行
     document.getElementById('adminCmdBtn').addEventListener('click', async () => {
       const input = document.getElementById('adminCmdInput');
       const output = document.getElementById('adminCmdOutput');
@@ -1504,7 +1574,6 @@
       input.value = '';
     });
 
-    // ブロックトグル
     document.querySelectorAll('.toggle-switch[data-block-index]').forEach(el => {
       el.addEventListener('click', async function() {
         const idx = parseInt(this.dataset.blockIndex, 10);
@@ -1521,9 +1590,7 @@
             adminDisabledBlocks = data.settings.disabledBlocks || [];
             renderAdminPanel();
           }
-        } catch(e) {
-          console.warn('ブロックトグル失敗:', e);
-        }
+        } catch(e) {}
       });
     });
   }
@@ -1535,13 +1602,18 @@
     }
   });
 
-  // ===================== ランキング（モード別タブ・柔らかいが一番右） =====================
+  // ===================== ランキング =====================
   async function renderRankingModal() {
     modalContent.dataset.mode = 'ranking';
     let html = `
       <h2 style="color:var(--gold);">🏆 ランキング</h2>
       <div class="sub">8×8サイズのスコアのみランキング対象です。</div>
-      <div class="tab-row" style="margin-bottom:10px;">
+      <div class="tab-row" style="margin-bottom:6px;">
+        ${RANKING_TYPES.map(t => `
+          <button class="tab-btn ${currentRankingType === t ? 'active' : ''}" data-rtype="${t}">${RANKING_TYPE_LABELS[t]}</button>
+        `).join('')}
+      </div>
+      <div class="tab-row" id="modeTabs" style="margin-bottom:10px; ${currentRankingType === 'score' ? '' : 'display:none;'}">
         ${RANKING_MODES.map(m => `
           <button class="tab-btn ${currentRankingMode === m ? 'active' : ''}" data-rmode="${m}">${RANKING_MODE_LABELS[m]}</button>
         `).join('')}
@@ -1552,6 +1624,12 @@
     `;
     modalContent.innerHTML = html;
 
+    modalContent.querySelectorAll('.tab-btn[data-rtype]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        currentRankingType = btn.dataset.rtype;
+        renderRankingModal();
+      });
+    });
     modalContent.querySelectorAll('.tab-btn[data-rmode]').forEach(btn => {
       btn.addEventListener('click', () => {
         currentRankingMode = btn.dataset.rmode;
@@ -1560,50 +1638,72 @@
     });
 
     try {
-      const res = await fetch(`${API_BASE_URL}/api/ranking?mode=${currentRankingMode}`);
+      const res = await fetch(`${API_BASE_URL}/api/ranking?mode=${currentRankingMode}&type=${currentRankingType}`);
       const data = await res.json();
       let content = `<div style="text-align:left; max-height:380px; overflow-y:auto;">`;
       if (data.top && data.top.length > 0) {
         data.top.forEach((user, index) => {
           const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `${index+1}.`;
           const isMe = user.id === currentUserId;
+          const valueLabel = currentRankingType === 'coins' ? `${user.value}コイン` :
+                            currentRankingType === 'playtime' ? `${user.value}秒` :
+                            `${user.value}点`;
           content += `
             <div style="display:flex; justify-content:space-between; padding:8px 4px; border-bottom:1px solid rgba(255,255,255,0.05); ${isMe ? 'background:rgba(255,217,61,0.15); border-radius:8px;' : ''}">
               <span style="font-weight:700; ${isMe ? 'color:var(--gold);' : ''}">${medal} ${user.id} ${isMe ? '👈' : ''}</span>
-              <span style="color:var(--gold); font-weight:800;">${user.best_score}点</span>
+              <span style="color:var(--gold); font-weight:800;">${valueLabel}</span>
             </div>
           `;
         });
       } else {
-        content += `<div class="sub">まだランキングに登録されたユーザーがいません。</div>`;
+        const msg = currentRankingType === 'score' ? 'このモードのランキングデータがまだありません。' :
+                   currentRankingType === 'coins' ? 'まだコインデータがありません。' :
+                   'プレイ時間データがまだありません。';
+        content += `<div class="sub">${msg}</div>`;
       }
       content += `</div>`;
+
       if (authToken && currentUserId) {
-        let myScore = 0;
+        let myValue = 0;
         try {
           const syncRes = await fetch(`${API_BASE_URL}/api/sync`, {
             headers: { 'Authorization': `Bearer ${authToken}` }
           });
           const syncData = await syncRes.json();
-          myScore = syncData.bestScore || 0;
+          if (currentRankingType === 'coins') {
+            myValue = syncData.coins || 0;
+          } else if (currentRankingType === 'playtime') {
+            myValue = syncData.playTime || 0;
+          } else {
+            const bestScores = syncData.bestScores || {};
+            myValue = bestScores[currentRankingMode] || 0;
+          }
         } catch(e) {}
-        if (myScore > 0) {
-          const higherCount = data.top ? data.top.filter(u => u.best_score > myScore).length : 0;
+
+        if (myValue > 0) {
+          const higherCount = data.top ? data.top.filter(u => u.value > myValue).length : 0;
           const myInTop = data.top ? data.top.some(u => u.id === currentUserId) : false;
-          let rankDisplay = myInTop ? `${data.top.findIndex(u => u.id === currentUserId) + 1}位` : `${higherCount + 1}位以上`;
+          let rankDisplay = myInTop ? `${data.top.findIndex(u => u.id === currentUserId) + 1}位` :
+                           (data.top && data.top.length > 0 ? `${higherCount + 1}位以上` : '-');
+          const valueLabel = currentRankingType === 'coins' ? `${myValue}コイン` :
+                            currentRankingType === 'playtime' ? `${myValue}秒` :
+                            `${myValue}点`;
           content += `
             <div style="margin-top:16px; padding:14px 16px; background:linear-gradient(135deg,var(--panel-light),var(--panel)); border-radius:14px; border:2px solid var(--gold); display:flex; justify-content:space-between; align-items:center; position:sticky; bottom:0; backdrop-filter:blur(8px);">
               <span style="font-weight:700; color:var(--gold);">👤 ${currentUserId} の順位</span>
               <span style="font-weight:800; font-size:20px; color:var(--gold);">
                 ${rankDisplay}
-                <span style="font-size:14px; color:var(--text-dim); font-weight:400; margin-left:8px;">${myScore}点</span>
+                <span style="font-size:14px; color:var(--text-dim); font-weight:400; margin-left:8px;">${valueLabel}</span>
               </span>
             </div>
           `;
         } else {
+          const msg = currentRankingType === 'score' ? 'まだこのモードのスコアがありません。' :
+                     currentRankingType === 'coins' ? 'まだコインがありません。' :
+                     'プレイ時間が記録されていません。';
           content += `
             <div style="margin-top:16px; padding:14px 16px; background:var(--panel-light); border-radius:14px; text-align:center; color:var(--text-dim);">
-              📊 まだスコアがありません。ゲームをプレイして順位を獲得しよう！
+              📊 ${msg}
             </div>
           `;
         }
@@ -1623,6 +1723,158 @@
   rankingBtn.addEventListener('click', () => {
     renderRankingModal();
     modalOverlay.classList.add('show');
+  });
+
+  // ===================== 🆕 チャット＆プロフィール機能 =====================
+  let chatMessages = [];
+  let chatPollingInterval = null;
+
+  function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+  }
+
+  async function fetchChatMessages() {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/chat/messages`);
+      const data = await res.json();
+      chatMessages = data;
+      renderChatMessages();
+    } catch (err) {
+      console.warn('チャット取得失敗:', err);
+    }
+  }
+
+  async function sendChatMessage(message) {
+    if (!authToken) {
+      alert('ログインが必要です');
+      return false;
+    }
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/chat/send`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ message })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || '送信失敗');
+      }
+      await fetchChatMessages();
+      return true;
+    } catch (err) {
+      alert(err.message);
+      return false;
+    }
+  }
+
+  async function showProfile(userId) {
+    try {
+      const res = await fetch(`${API_BASE_URL}/api/user/profile/${userId}`);
+      if (!res.ok) throw new Error('ユーザーが見つかりません');
+      const data = await res.json();
+      modalContent.dataset.mode = 'profile';
+      modalContent.innerHTML = `
+        <h2 style="color:var(--gold);">👤 ${data.userId} のプロフィール</h2>
+        <div style="text-align:left; padding:8px 0;">
+          <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+            <span style="color:var(--text-dim);">🏆 ベストスコア</span>
+            <span style="color:var(--gold); font-weight:800;">${data.bestScore}点</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+            <span style="color:var(--text-dim);">🪙 コイン</span>
+            <span style="color:var(--gold); font-weight:800;">${data.coins}コイン</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:6px 0; border-bottom:1px solid rgba(255,255,255,0.05);">
+            <span style="color:var(--text-dim);">⏱️ プレイ時間</span>
+            <span style="color:var(--gold); font-weight:800;">${data.playTime}秒</span>
+          </div>
+          <div style="display:flex; justify-content:space-between; padding:6px 0;">
+            <span style="color:var(--text-dim);">📅 登録日</span>
+            <span style="color:var(--text-dim);">${new Date(data.joinedAt).toLocaleDateString('ja-JP')}</span>
+          </div>
+        </div>
+        <button class="ghost-btn" onclick="closeModal()">閉じる</button>
+      `;
+      modalOverlay.classList.add('show');
+    } catch (err) {
+      alert(err.message);
+    }
+  }
+
+  function renderChatMessages() {
+    const container = document.getElementById('chatMessages');
+    if (!container) return;
+    if (chatMessages.length === 0) {
+      container.innerHTML = `<div style="text-align:center; color:var(--text-dim);">まだメッセージがありません。</div>`;
+      return;
+    }
+    container.innerHTML = chatMessages.map(msg => `
+      <div style="display:flex; align-items:baseline; gap:6px; padding:4px 0; border-bottom:1px solid rgba(255,255,255,0.03);">
+        <span style="color:var(--gold); font-weight:700; cursor:pointer; flex-shrink:0;" onclick="showProfile('${msg.user_id}')">
+          [${msg.user_id}]
+        </span>
+        <span style="color:var(--text); word-break:break-word;">${escapeHtml(msg.message)}</span>
+        <span style="color:var(--text-dim); font-size:10px; margin-left:auto; flex-shrink:0;">
+          ${new Date(msg.timestamp).toLocaleTimeString('ja-JP')}
+        </span>
+      </div>
+    `).join('');
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function renderChatModal() {
+    modalContent.dataset.mode = 'chat';
+    modalContent.innerHTML = `
+      <h2 style="color:var(--gold);">💬 グローバルチャット</h2>
+      <div class="sub">全ユーザーと会話できます。</div>
+      <div id="chatMessages" style="height:300px; overflow-y:auto; background:var(--bg-deep2); border-radius:12px; padding:10px; margin:8px 0; text-align:left; border:1px solid rgba(255,255,255,0.05);">
+        <div style="text-align:center; color:var(--text-dim);">読み込み中...</div>
+      </div>
+      <div style="display:flex; gap:6px;">
+        <input type="text" id="chatInput" placeholder="メッセージを入力..." style="flex:1; padding:10px 12px; border-radius:12px; border:1px solid rgba(255,255,255,0.12); background:var(--bg-deep2); color:var(--text); font-size:14px; font-family:'Nunito',sans-serif;">
+        <button class="primary-btn" id="chatSendBtn" style="flex-shrink:0; width:auto; padding:10px 20px; margin:0;">送信</button>
+      </div>
+      <div style="margin-top:6px; text-align:right; font-size:10px; color:var(--text-dim);">最新50件を表示</div>
+    `;
+    modalOverlay.classList.add('show');
+
+    fetchChatMessages();
+
+    document.getElementById('chatSendBtn').addEventListener('click', async () => {
+      const input = document.getElementById('chatInput');
+      const msg = input.value.trim();
+      if (!msg) return;
+      await sendChatMessage(msg);
+      input.value = '';
+    });
+
+    document.getElementById('chatInput').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        document.getElementById('chatSendBtn').click();
+      }
+    });
+
+    if (chatPollingInterval) clearInterval(chatPollingInterval);
+    chatPollingInterval = setInterval(fetchChatMessages, 3000);
+  }
+
+  chatBtn.addEventListener('click', () => {
+    renderChatModal();
+    // モーダルが閉じられたらポーリング停止
+    const observer = new MutationObserver(() => {
+      if (!modalOverlay.classList.contains('show')) {
+        if (chatPollingInterval) {
+          clearInterval(chatPollingInterval);
+          chatPollingInterval = null;
+        }
+      }
+    });
+    observer.observe(modalOverlay, { attributes: true, attributeFilter: ['class'] });
   });
 
   // ===================== 初期化 =====================
